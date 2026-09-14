@@ -1,11 +1,14 @@
 // Typed surface over the plain-JS engine.
 import * as E from "../../../engine/index.js";
+import { project as P } from "../../../projects/film/index.js";
 import type { NodeSpec, SubnetDoc, SceneDoc, GraphPathStep } from "./types";
 
 export const CAT = E.CAT as Record<string, NodeSpec>;
-export const LIB = E.LIB as Record<string, SubnetDoc>;
+/** the project's functions made of nodes */
+export const LIB = P.functions as unknown as Record<string, SubnetDoc>;
+E.setLibrary(P.functions);
 export const MULTI_INPUTS = E.MULTI_INPUTS as string[];
-export const SCENES = E.SCENES as unknown as Record<string, SceneDoc>;
+export const SCENES = P.scenes as unknown as Record<string, SceneDoc>;
 export const setLibrary = E.setLibrary as (
   lib: Record<string, SubnetDoc>,
 ) => void;
@@ -23,6 +26,10 @@ export const phaseName = E.phaseName as (
 export interface RenderInfo {
   iris: number;
   kind: string;
+  /** local time when a clip is displayed */
+  local: number | null;
+  /** loop length of the scene, 0 when it has none */
+  loop: number;
 }
 export interface Runner {
   scene: SceneDoc;

@@ -150,3 +150,19 @@ export function duplicateNode(graph: GraphDoc, id: string): string | null {
   graph.nodes[nid] = copy;
   return nid;
 }
+
+/** move one entry of a list input earlier (-1) or later (+1); order is draw order and clip order */
+export function moveInList(
+  graph: GraphDoc,
+  id: string,
+  port: string,
+  from: string,
+  dir: -1 | 1,
+): void {
+  const v = graph.nodes[id]?.in?.[port];
+  if (!Array.isArray(v)) return;
+  const k = v.indexOf(from);
+  const j = k + dir;
+  if (k < 0 || j < 0 || j >= v.length) return;
+  [v[k], v[j]] = [v[j], v[k]];
+}

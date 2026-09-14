@@ -1,7 +1,6 @@
-// Riso engine: stencils, graph DSL, pixel nodes, subnet library, scene runtime, scenes.
+// Riso engine core: stencils, graph DSL (geometry, marks, time), pixel nodes, scene runtime.
+// Projects add functions made of nodes and scenes on top; see ../projects.
 export * from './riso.js';
 export * from './graph.js';
 export * from './cops.js';
 export * from './scene.js';
-export * from './scenes.js';
-import './library.js';

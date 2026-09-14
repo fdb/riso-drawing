@@ -5,9 +5,11 @@
 <canvas id="c"></canvas>
 <script type="module">
 // Headless render page. ?scene=<name> ?f=<frame at 24 fps> ?s=<seed> ?res=<px> ?hold=1 (no iris)
-import { SceneRunner, SCENES } from './engine/index.js';
+import { SceneRunner, setLibrary } from './engine/index.js';
+import { project } from './projects/film/index.js';
 const q = new URLSearchParams(location.search);
-const scenes = JSON.parse(JSON.stringify(SCENES));
+setLibrary(project.functions);
+const scenes = JSON.parse(JSON.stringify(project.scenes));
 const scene = scenes[q.get('scene') || 'jelly'];
 if (q.get('s')) scene.seed = +q.get('s');
 const res = +(q.get('res') || 1080), frame = +(q.get('f') || 10);

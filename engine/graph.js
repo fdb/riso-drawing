@@ -10,7 +10,7 @@ import { TAU, mulberry32, clamp01, dist, makeNoise } from './riso.js';
 // Every param may be a number or an expression string. Expressions see:
 //   t, u, iris          time since start, time since the iris opened, iris scale 0..1
 //   $name               a subnet parameter or a `let` value
-//   @name               an attribute of the current point, primitive or copy (x y v i n u px py a w pw …)
+//   @name               an attribute of the current point, primitive or copy (x y v i n u px py a w pw tx ty nx ny …)
 //   rand(k)             stable random 0..1 for this graph path (and point / copy) and key k
 //   noise(x,y,scale,seed) radial(x,y,cx,cy,r) lin(x,y,x0,y0,x1,y1) dist(x,y,x2,y2) clamp(v) ease(v)
 //   f                   frame index
@@ -84,6 +84,11 @@ function pointAttrs(pr, k, stamps) {
   const n = pr.pts.length, A = Object.assign({}, stamps, pr.attrs);
   A.x = pr.pts[k][0]; A.y = pr.pts[k][1]; A.i = k; A.n = n; A.v = n > 1 ? k / (n - 1) : (A.v !== undefined ? A.v : 0);
   A.pw = pr.pw ? pr.pw[k] : (pr.attrs.w !== undefined ? pr.attrs.w : 0);
+  if (n > 1) {   // tangent and normal from the neighbours
+    const p0 = pr.pts[k > 0 ? k - 1 : (pr.closed ? n - 1 : 0)], p1 = pr.pts[k < n - 1 ? k + 1 : (pr.closed ? 0 : n - 1)];
+    const dx = p1[0] - p0[0], dy = p1[1] - p0[1], l = Math.hypot(dx, dy) || 1;
+    A.tx = dx / l; A.ty = dy / l; A.nx = -dy / l; A.ny = dx / l;
+  } else { A.tx = 1; A.ty = 0; A.nx = 0; A.ny = 1; }
   if (pr.pa) for (const key in pr.pa) A[key] = pr.pa[key][k];
   return A;
 }
@@ -227,6 +232,25 @@ def('attr', { label: 'Primitive attributes', cat: 'geo', out: 'geo', inputs: ['g
     for (const k in node.attrs || {}) { A[k] = evalExpr(node.attrs[k], ctx, A, path); q.attrs[k] = A[k]; }
     return q;
   })) });
+// resample: points at even arc length along each primitive, with @v and the tangent/normal
+def('resample', { label: 'Resample', cat: 'geo', out: 'geo', inputs: ['geo'], params: { step: N(6, 0.5, 100, 0.5, 'spacing (px)') },
+  fn: (i, p) => geo(i.geo.prims.map(pr => {
+    const src = pr.pts; if (src.length < 2) return clonePrim(pr);
+    const closed = pr.closed, pts = closed ? [...src, src[0]] : src, pws = pr.pw ? (closed ? [...pr.pw, pr.pw[0]] : pr.pw) : null;
+    const seg = [], cum = [0]; let L = 0;
+    for (let k = 1; k < pts.length; k++) { const d = Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]); seg.push(d); L += d; cum.push(L); }
+    if (L < 1e-6) return clonePrim(pr);
+    const n = Math.max(2, Math.round(L / p.step)), q = clonePrim(pr); q.pts = []; q.pw = pws ? [] : null; q.pa = null;
+    let j = 0;
+    for (let k = 0; k <= (closed ? n - 1 : n); k++) {
+      const d = k / n * L;
+      while (j < seg.length - 1 && cum[j + 1] < d) j++;
+      const f = seg[j] > 0 ? (d - cum[j]) / seg[j] : 0, a = pts[j], b = pts[j + 1];
+      q.pts.push([a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f]);
+      if (q.pw) q.pw.push(pws[j] + (pws[j + 1] - pws[j]) * f);
+    }
+    return q;
+  })) });
 def('filter', { label: 'Filter primitives', cat: 'geo', out: 'geo', inputs: ['geo'], params: { expr: E('1', 'keep when true') },
   fn: (i, p, ctx, node, id) => geo(i.geo.prims.filter((pr, pi) => evalExpr(node.params.expr, ctx, { ...ctx.A, ...pr.attrs }, ctx.path + '/' + id + '#' + pi))) });
 def('join', { label: 'Join into one', cat: 'geo', out: 'geo', inputs: ['list'], params: { close: N(0, 0, 1, 1) },
@@ -299,26 +323,57 @@ function radiiGeo(g, expr, ctx, id) {
   return geo(g.prims.map((pr, pi) => { const q = clonePrim(pr); q.pw = pr.pts.map((_, k) => evalExpr(expr, ctx, pointAttrs(pr, k, ctx.A), ctx.path + '/' + id + '#' + pi + '.' + k)); return q; }));
 }
 def('mask', { label: 'Mask (keep inside)', cat: 'mark', out: 'marks', inputs: ['geo'], params: {}, fn: i => [mk('mask', { geo: i.geo })] });
-def('clip', { label: 'Clip marks', cat: 'mark', out: 'marks', inputs: ['marks', 'geo'], params: {},
+def('crop', { label: 'Crop marks to a shape', cat: 'mark', out: 'marks', inputs: ['marks', 'geo'], params: {},
   fn: i => flatMarks(i.marks).map(m => ({ ...m, clip: [...m.clip, i.geo] })) });
 const flatMarks = v => Array.isArray(v) && v.length && Array.isArray(v[0]) ? [].concat(...v) : v;
 
-// ---- shot: the marks of another scene, at a time offset, with an iris or a hard cut ----
-def('shot', { label: 'Shot (scene)', cat: 'util', out: 'marks',
-  params: { scene: { def: 'jelly', kind: 'text' }, at: N(0, 0, 120, 0.01, 'start (s)'), dur: N(1, 0, 60, 0.01, 'duration (s)'), mode: { def: 'iris', kind: 'text', label: 'iris | cut' } },
+// ---- clips and sequences: time lives in values ----
+// A clip is marks as a function of its own local time: { kind: 'clip', dur, at(t, f) → marks }.
+// A sequence stacks clips one after another and is itself a clip. Any node that expects marks
+// receives a clip already resolved at the current time, so clips flow into merge and rasterize.
+def('clip', { label: 'Clip (scene)', cat: 'util', out: 'clip',
+  params: { scene: { def: 'jelly', kind: 'text' }, dur: N(0, 0, 60, 0.01, 'length (s), 0 = the scene\'s own'), offset: N(0, 0, 60, 0.01, 'start inside the scene (s)'),
+    mode: { def: 'iris', kind: 'text', label: 'iris | cut' } },
   fn(i, p, ctx, node, id) {
-    const sc = ctx.scenes && ctx.scenes[p.scene]; if (!sc) return [];
-    const T = ctx.T, t = T.t - p.at;   // reading time makes the shot dynamic, as it should be
-    if (t < 0 || t >= p.dur) return [];
-    const tr = sc.transition, iris = p.mode === 'cut' || !tr ? 1 : irisAt(t, p.dur, tr);
-    const c2 = { ...ctx, T: timeTracker(t, t, T.f, iris), V: {}, A: {}, path: ctx.path + '/' + id, scene: sc, seed: sc.seed, memo: ctx.memo };
-    Object.defineProperty(c2.T, 'used', { value: true, writable: true });
-    applyLet(sc.graph, c2);
-    const out = evalNode(sc.graph, sc.graph.marks || 'marks', c2);
-    T.used = true;
-    return Array.isArray(out) ? out.map(m => ({ ...m, dyn: true })) : [];
+    const sc = ctx.scenes && ctx.scenes[p.scene]; if (!sc) return emptyClip();
+    const tr = sc.transition;
+    const dur = p.dur > 0 ? p.dur : sc.duration || (tr ? tr.open + tr.hold + tr.close : 1);
+    const base = { ...ctx, V: {}, A: {}, path: ctx.path + '/' + id, scene: sc, seed: sc.seed };
+    let last = null;
+    const at = (t, f) => {
+      if (t < 0 || t >= dur) return [];
+      if (last && last.t === t && last.f === f) return last.marks;
+      const iris = p.mode === 'cut' || !tr ? 1 : irisAt(t, dur, tr);
+      const c2 = { ...base, T: timeTracker(t + p.offset, t, f, iris), memo: new Map() };
+      applyLet(sc.graph, c2);
+      const out = evalNode(sc.graph, sc.graph.marks || 'marks', c2);
+      const marks = resolveClips(Array.isArray(out) ? out : [], t, f).map(m => ({ ...m, dyn: true }));
+      last = { t, f, marks };
+      return marks;
+    };
+    return { kind: 'clip', dur, at, dyn: true };
   } });
-// iris scale for a shot: open at the start, close at the end
+def('sequence', { label: 'Sequence (clips in order)', cat: 'util', out: 'clip', inputs: ['list'], rawClips: true,
+  params: { gap: N(0, 0, 5, 0.01, 'blank between clips (s)') },
+  fn(i, p) {
+    const clips = i.list.filter(v => v && v.kind === 'clip');
+    const starts = []; let dur = 0;
+    for (const c of clips) { starts.push(dur); dur += c.dur + p.gap; }
+    if (clips.length) dur -= p.gap;
+    const at = (t, f) => {
+      for (let k = clips.length - 1; k >= 0; k--) if (t >= starts[k]) return t < starts[k] + clips[k].dur ? clips[k].at(t - starts[k], f) : [];
+      return [];
+    };
+    return { kind: 'clip', dur, at, dyn: true, starts };
+  } });
+const emptyClip = () => ({ kind: 'clip', dur: 0, at: () => [], dyn: true });
+// clips inside a marks list become marks at the current time
+function resolveClips(list, t, f) {
+  const out = [];
+  for (const v of list) { if (v && v.kind === 'clip') out.push(...v.at(t, f)); else if (Array.isArray(v)) out.push(...resolveClips(v, t, f)); else if (v) out.push(v); }
+  return out;
+}
+// iris scale for a clip: open at the start, close at the end
 function irisAt(t, dur, tr) {
   if (t < tr.open) return easeOutCubic(t / tr.open);
   const rem = dur - t; if (rem < tr.close) { const x = 1 - rem / tr.close; return 1 - x * x * x; }
@@ -328,6 +383,7 @@ function irisAt(t, dur, tr) {
 // which input a bypassed node passes through: the one of its own output kind
 const BYPASS = { geo: ['geo', 'points'], marks: ['marks', 'list'], image: ['image', 'a', 'list'], any: ['list'] };
 export function bypassPort(spec) { const names = BYPASS[spec.out] || []; return names.find(n => spec.inputs.includes(n)) || null; }
+const hasClip = v => (v && v.kind === 'clip') || (Array.isArray(v) && v.some(hasClip));
 const flatMarksOrGeo = list => { const L = list.filter(Boolean); if (!L.length) return []; if (Array.isArray(L[0])) return [].concat(...L); if (L[0].prims) return geo([].concat(...L.map(g => g.prims))); return L[0]; };
 
 // ---- subnet input ----
@@ -337,7 +393,7 @@ def('input', { label: 'Subnet input', cat: 'util', out: 'any', params: { name: {
 // ---------------- evaluation ----------------
 export const LIB = {};   // subnets: { name: { label, params, xf, graph: { let, nodes, output } } }
 export function setLibrary(lib) { for (const k in LIB) delete LIB[k]; Object.assign(LIB, lib); }
-const EMPTY = { geo: EMPTY_GEO, marks: () => [], field: () => ({ sample: () => 0 }), any: () => [] };
+const EMPTY = { geo: EMPTY_GEO, marks: () => [], field: () => ({ sample: () => 0 }), any: () => [], clip: () => ({ kind: 'clip', dur: 0, at: () => [], dyn: true }), image: () => ({ kind: 'image', w: 4, ch: 1, data: new Float32Array(16) }), stencils: () => ({ kind: 'stencils', dyn: false }) };
 
 function applyLet(graph, ctx) { if (graph.let) for (const k in graph.let) ctx.V[k] = evalExpr(graph.let[k], ctx); }
 function inputRefs(node) { const out = []; for (const k in node.in || {}) { const v = node.in[k]; Array.isArray(v) ? out.push(...v) : out.push(v); } return out; }
@@ -372,6 +428,7 @@ export function evalNode(graph, id, ctx) {
   else {
     const p = evalParams(spec.params, node.params || {}, ctx);
     for (const name of spec.inputs) if (inp[name] === undefined || (Array.isArray(inp[name]) && !inp[name].length && name !== 'list' && name !== 'marks')) inp[name] = defaultInput(name);
+    if (!spec.rawClips) for (const name of ['marks', 'list']) if (inp[name] !== undefined && hasClip(inp[name])) { inp[name] = resolveClips(Array.isArray(inp[name]) ? inp[name] : [inp[name]], ctx.T.t, ctx.T.f); }
     out = spec.fn(inp, p, ctx, node, id, graph);
     const dyn = inDyn || T.used;
     const sig = id + JSON.stringify(p) + inputSig(inp);

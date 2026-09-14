@@ -80,6 +80,7 @@ test("the bypass flag passes a node's input through", async ({ page }) => {
 
 test("main plays shots of other scenes", async ({ page }) => {
   await page.getByTestId("scene-main").click();
-  await expect(page.getByTestId("node-s2")).toBeVisible();
+  await expect(page.getByTestId("node-c2")).toBeVisible();
+  await expect(page.getByTestId("hud")).toContainText("loop");
   await expect(page.getByTestId("hud")).toContainText("main");
 });

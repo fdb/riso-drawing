@@ -26,14 +26,32 @@ One rule for the whole library, so that geometry and pixels feel like one langua
   areas solid inside one loop. In the graph these are a `compare` gate and a `max` with a
   `constant`, visible and editable.
 
+## Core and projects
+
+Two kinds of function, one calling convention. A **block** is a function made of code: one
+kernel, a schema, real design cost. A **function** is a graph of blocks, made of data: free to
+write, free to nest. Both are node types, both take inputs and parameters, both appear in the
+palette. The film's `jellyfish` and the Riso `risoInk` are functions; `circle`, `wrangle`,
+`compare` and `clip` are blocks.
+
+The decision boundary: a block earns its place only when it cannot be composed from existing
+blocks and is needed in more than one case. `hand` (the pencil) started as code and became a
+function once `resample` existed and points carried their tangent and normal. That is the
+direction things should flow: more functions, few blocks.
+
+Projects are ES modules. The core is one module; a project exports its functions and scenes;
+another project imports the same core and, if it wants the look, this project's `print.js`.
+
 | File | Role |
 |---|---|
-| `engine/riso.js` | Print engine. Three ink stencils, halftone, registration, grain, multiply over paper. |
-| `engine/graph.js` | The DSL: value types, expressions, geometry and mark catalog, evaluator, mark painter. |
-| `engine/cops.js` | The pixel layer: image values, the pixel catalog, previews of any value. |
-| `engine/library.js` | Subnets as pure data: `water`, `stars`, `bubble`, `jellyfish`, `sky`, `burst`, `ridge`, `treeline`, `flake`, `webflake`, `dot`, `risoInk`, `risoPrint`. |
-| `engine/scenes.js` | The scenes: `jelly`, `fireworks`, `mountains`, `snow`, and `main`, the composition. |
-| `engine/scene.js` | Runtime: iris timing, static-prefix cache, one call per frame. |
+| `engine/riso.js` | Core. Ink stencils: three grayscale canvases marks are painted onto. |
+| `engine/graph.js` | Core. Values, expressions, geometry and mark blocks, time blocks (`clip`, `sequence`), evaluator, mark painter. |
+| `engine/cops.js` | Core. Pixel blocks and previews. |
+| `engine/scene.js` | Core. Runtime: one frame of a scene, display of any node, loop length. |
+| `projects/film/world.js` | Functions of this film: `hand`, `water`, `stars`, `bubble`, `jellyfish`, `sky`, `burst`, `ridge`, `treeline`, `flake`, `webflake`, `dot`. |
+| `projects/film/print.js` | The Riso look as functions of pixel blocks: `risoInk`, `risoPrint`. |
+| `projects/film/scenes.js` | The scenes: `jelly`, `fireworks`, `mountains`, `snow`, `main`. |
+| `projects/film/index.js` | The project module: `{ functions, scenes }`. |
 | `editor/` | The node-based editor app (see `editor/README.md`). |
 | `render.html`, `render.sh`, `render-anim.sh` | Headless page and scripts: one frame of a named scene to PNG, or a sequence to mp4. |
 
@@ -95,14 +113,21 @@ Operators reshape it: `transform`, `wrangle` (per-point expressions for x, y and
 once per input point, with `@i @n @u @px @py @a`, and a stamp transform `x y rot scale` per copy:
 radial copies are `rot: '@i/@n*TAU'`, mirrors are `scale: -1`), `merge`.
 
-`shot` embeds another scene: its marks at a time offset, for a duration, with that scene's iris
-or a hard cut. A composition is a scene whose graph is shots merged into marks and printed.
+Time blocks. `clip` is another scene's marks as a function of the clip's own local time, with a
+length and an iris or a hard cut; `sequence` stacks clips one after another and is itself a
+clip, so sequences nest. Any node that expects marks receives a clip resolved at the current
+time, so a sequence flows straight into `rasterize`. A composition is a scene whose marks node is
+a sequence; its loop length is the sequence's length. Reordering the sequence's list reorders the
+film. A clip flagged for render plays on its own timeline in the viewer.
+
+`resample` places points at even arc length; every point then carries `@tx @ty @nx @ny`, the
+tangent and normal, which is what `hand` needs to wobble a line the way a pencil does.
 
 `field` builds a field from an expression of `@x @y`.
 
 Mark nodes turn geometry into ink: `fill`, `stroke` (uses per-point widths when present), `tint`
 (dot screen of a field inside a shape), `dots` and `glow` (at points, radius per point), `mask`
-(keep inside), `clip` (restrict a list of marks to a shape).
+(keep inside), `crop` (restrict a list of marks to a shape).
 
 Pixel nodes (the compositing layer). Sources: `rasterize` (marks → stencils), `stencil` (pick
 one), `paper`, `screen` (the halftone threshold pattern for a cell and angle), `noise`, `random`
@@ -196,15 +221,20 @@ The iris, the ring and the disc are ordinary nodes. The runtime only supplies `i
 | `fireworks` | full bleed, cut | two `sky` gradients (night, water), five `burst`, scattered glints copied to points, a skyline and boats as `polygon`, `dot` |
 | `mountains` | full bleed, cut | `sky` plus a radial sun haze, copied sun rings, three `ridge` layers, two `treeline` rows with a cut fog band between, `dot` |
 | `snow` | full bleed, cut | `sky`, three big `flake` prints in light pink, one detailed `flake` with a yellow hex core, a `webflake`, stars and sparkles, `dot` |
-| `main` | composition | `shot` nodes: jelly with its iris, then fireworks, snow and mountains as hard cuts, then jelly again |
+| `main` | composition | a `sequence` of `clip`s: jelly with its iris, then fireworks, snow and mountains as hard cuts, then jelly again |
 
 The film's montage section cuts every 3 frames; the jellyfish shot holds 12 frames inside an
 iris. Both timings are data on the `shot` nodes.
 
 What the new scenes taught the language: `polygon` for hand-placed silhouettes, `scatter` inside
 a shape for reflections and stars, stamp transforms on `copy` for snowflake arms and sun rings,
-`lin` for sky gradients, `shot` for composition. The subnets `sky`, `ridge`, `treeline`, `burst`
-and `flake` are general: any sunset, any forest, any firework.
+`lin` for sky gradients, `clip` and `sequence` for composition, `resample` and point normals for
+the pencil. The functions `sky`, `ridge`, `treeline`, `burst`, `flake` and `hand` are general:
+any sunset, any forest, any firework, any line that should look drawn.
+
+**Humanizing in two places.** The print pass humanizes pixels: screens, slip, grain. `hand`
+humanizes geometry: even resampling, slow wobble and fine jitter along the normal, width that
+varies like pressure, thinner ends, a little overshoot. The firework rays go through it.
 
 ## Read from the film
 

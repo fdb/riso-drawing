@@ -1,5 +1,13 @@
 import { useRef, useState } from "react";
-import { Trash2, Copy, CornerRightDown, Target, X } from "lucide-react";
+import {
+  Trash2,
+  Copy,
+  CornerRightDown,
+  Target,
+  X,
+  ChevronUp,
+  ChevronDown,
+} from "lucide-react";
 import { useEditor } from "../store/editor";
 import {
   resolveGraph,
@@ -7,6 +15,7 @@ import {
   renameNode,
   duplicateNode,
   disconnect,
+  moveInList,
 } from "../lib/graphOps";
 import {
   CAT,
@@ -386,6 +395,26 @@ export function NodeEditor({
           <span className="val wide">
             {(Array.isArray(v) ? v : [v]).map((from) => (
               <span className="chip" key={from}>
+                {Array.isArray(v) && (
+                  <>
+                    <button
+                      onClick={() =>
+                        edit((_, g) => moveInList(g, id, port, from, -1))
+                      }
+                      title="earlier"
+                    >
+                      <ChevronUp size={10} />
+                    </button>
+                    <button
+                      onClick={() =>
+                        edit((_, g) => moveInList(g, id, port, from, 1))
+                      }
+                      title="later"
+                    >
+                      <ChevronDown size={10} />
+                    </button>
+                  </>
+                )}
                 {from}
                 <button
                   onClick={() => edit((_, g) => disconnect(g, id, port, from))}

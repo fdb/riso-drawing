@@ -12,7 +12,8 @@ npm run test:e2e     # Playwright: render, select, undo/redo, palette, dive into
 npm run build        # static site in dist/ (deployable to Cloudflare Pages)
 ```
 
-The engine is imported from `../engine/` so the headless render page and the editor share it.
+The core is imported from `../engine/`, the project's functions and scenes from `../projects/film/`;
+the headless render page uses the same two modules.
 
 ## Layout
 

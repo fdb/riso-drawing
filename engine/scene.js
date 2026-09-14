@@ -35,7 +35,21 @@ export class SceneRunner {
       if (probe.result === undefined && display.path === '') value = evalScene(sc, { t: time, u, iris, f: frame, res: this.res, cache: this.cache, node: display.id, scenes: this.scenes });
       else if (probe.result !== undefined) value = probe.result;
     }
+    const kind = Array.isArray(value) ? 'marks' : value && value.kind ? value.kind : value && value.prims ? 'geo' : value && value.sample ? 'field' : 'none';
+    let local = null;
+    if (kind === 'clip') {   // a clip plays on its own timeline
+      local = value.dur > 0 ? ((time % value.dur) + value.dur) % value.dur : 0;
+      value = value.at(local, frame);
+    }
     drawValue(ctx, value, this.res);
-    return { iris, kind: Array.isArray(value) ? 'marks' : value && value.kind ? value.kind : value && value.prims ? 'geo' : value && value.sample ? 'field' : 'none' };
+    return { iris, kind, local, loop: this.loopLength() };
+  }
+  // the loop length of the scene: its duration, or the length of its marks clip
+  loopLength() {
+    const sc = this.scene; if (sc.duration) return sc.duration;
+    const id = sc.graph.marks || 'marks', n = sc.graph.nodes[id];
+    if (!n || (n.type !== 'sequence' && n.type !== 'clip')) return 0;
+    const v = evalScene(sc, { res: this.res, cache: this.cache, node: id, scenes: this.scenes });
+    return v && v.kind === 'clip' ? v.dur : 0;
   }
 }

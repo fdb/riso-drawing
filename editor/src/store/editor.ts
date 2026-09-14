@@ -133,8 +133,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     selection: null,
     ui: {
       theme:
-        (storage()?.getItem("riso-editor-theme") as "light" | "dark") ||
-        "dark",
+        (storage()?.getItem("riso-editor-theme") as "light" | "dark") || "dark",
       display: null,
       res: 540,
       playing: true,

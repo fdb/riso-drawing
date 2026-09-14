@@ -66,12 +66,13 @@ export function Viewport() {
             loopHold: ui.loopHold,
             display: ui.display,
           });
+          if (info.loop && time >= info.loop) time = time % info.loop;
           const ms = performance.now() - t0;
           fps = fps * 0.8 + (1000 / Math.max(ms, 1)) * 0.2;
           if (hudRef.current)
             hudRef.current.textContent =
               `${sceneName}  t ${time.toFixed(2)}s  frame ${frame}  ${scene.transition ? phaseName(time, scene.transition, ui.loopHold) + "  iris " + info.iris.toFixed(2) : ""}\n` +
-              `${ms.toFixed(0)} ms  ~${fps.toFixed(0)} fps   showing ${ui.display ? `${ui.display.id} (${info.kind})` : "output"}`;
+              `${ms.toFixed(0)} ms  ~${fps.toFixed(0)} fps   showing ${ui.display ? `${ui.display.id} (${info.kind})` : "output"}${info.local !== null ? `  clip t ${info.local.toFixed(2)}s` : ""}${info.loop ? `  loop ${info.loop.toFixed(2)}s` : ""}`;
         } catch (e) {
           if (hudRef.current)
             hudRef.current.textContent = "ERROR " + (e as Error).message;
