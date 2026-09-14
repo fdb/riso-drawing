@@ -1,0 +1,10 @@
+# source material and study frames: never committed
+research/
+# rendered output
+renders/
+node_modules/
+editor/dist/
+editor/test-results/
+editor/playwright-report/
+.playwright-mcp/
+.DS_Store

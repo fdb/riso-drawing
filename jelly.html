@@ -1,0 +1,18 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>riso jelly</title>
+<style>html,body{margin:0;background:#f2ede3}canvas{display:block;width:1080px;height:1080px}</style>
+<canvas id="c"></canvas>
+<script type="module">
+// Still / headless page. ?f=<frame at 24 fps> ?s=<seed> ?res=<px> ?hold=1 (no iris)
+import { SceneRunner, SCENES } from './engine/index.js';
+const q = new URLSearchParams(location.search);
+const scene = JSON.parse(JSON.stringify(SCENES.jelly));
+scene.seed = +(q.get('s') || scene.seed);
+const res = +(q.get('res') || 1080), frame = +(q.get('f') || 10);
+const cv = document.getElementById('c'); cv.width = cv.height = res;
+try {
+  new SceneRunner(res, scene).render(cv.getContext('2d'), frame / 24, frame, { loopHold: q.has('hold') });
+  document.title = 'done';
+} catch (e) { document.title = 'ERROR ' + e.message; document.body.innerText = e.stack; }
+</script>
