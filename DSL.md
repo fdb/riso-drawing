@@ -31,12 +31,11 @@ One rule for the whole library, so that geometry and pixels feel like one langua
 | `engine/riso.js` | Print engine. Three ink stencils, halftone, registration, grain, multiply over paper. |
 | `engine/graph.js` | The DSL: value types, expressions, geometry and mark catalog, evaluator, mark painter. |
 | `engine/cops.js` | The pixel layer: image values, the pixel catalog, previews of any value. |
-| `engine/library.js` | Subnets as pure data: `water`, `stars`, `bubble`, `jellyfish`, `risoInk`, `risoPrint`. |
-| `engine/scenes.js` | The `jelly` scene graph and the print defaults. |
+| `engine/library.js` | Subnets as pure data: `water`, `stars`, `bubble`, `jellyfish`, `sky`, `burst`, `ridge`, `treeline`, `flake`, `webflake`, `dot`, `risoInk`, `risoPrint`. |
+| `engine/scenes.js` | The scenes: `jelly`, `fireworks`, `mountains`, `snow`, and `main`, the composition. |
 | `engine/scene.js` | Runtime: iris timing, static-prefix cache, one call per frame. |
 | `editor/` | The node-based editor app (see `editor/README.md`). |
-| `jelly.html` | Headless still. `?f=` frame at 24 fps, `?s=` seed, `?res=`, `?hold`. |
-| `render.sh`, `render-anim.sh` | One frame to PNG, or a frame sequence to mp4. |
+| `render.html`, `render.sh`, `render-anim.sh` | Headless page and scripts: one frame of a named scene to PNG, or a sequence to mp4. |
 
 ## Values
 
@@ -77,7 +76,7 @@ Any parameter can be a number or an expression string. Expressions see:
 | `$name` | a subnet parameter or a `let` value |
 | `@name` | an attribute of the current point, primitive or copy: `x y v i n u px py a w pw k` and anything set by `attr` |
 | `rand(k)` | stable random 0..1 for the current graph path, copy and point, keyed by `k` |
-| `noise(x,y,scale,seed)` `radial(x,y,cx,cy,r)` `dist(…)` `clamp(v)` `ease(v)` | field helpers |
+| `noise(x,y,scale,seed)` `radial(x,y,cx,cy,r)` `lin(x,y,x0,y0,x1,y1)` `dist(…)` `clamp(v)` `ease(v)` | field helpers; `lin` is 0..1 along a direction, for gradients |
 | `cell.blue` `angle.blue` | the print screens, so tints can follow the halftone settings |
 
 Randomness is a hash of the node path, not a sequence. Changing one parameter never reshuffles
@@ -85,13 +84,19 @@ another node's random choices.
 
 ## Node catalog
 
-Generators make geometry: `circle`, `ellipse` (also arcs), `rect`, `line`, `wave` (sine or
-scallops), `rays`, `walk` (a turtle with a turn expression), `lens`, `scatter`, `point`.
+Generators make geometry: `circle` (a hexagon with `n: 6`), `ellipse` (also arcs), `rect`,
+`polygon` (a list of x y pairs, each of which may be an expression), `line`, `wave` (sine or
+scallops), `rays`, `walk` (a turtle with a turn expression), `lens`, `scatter` (in a disc, or
+uniformly inside any wired shape), `point`.
 
 Operators reshape it: `transform`, `wrangle` (per-point expressions for x, y and width), `attr`
 (per-primitive attributes from expressions), `filter`, `join`, `reverse`, `slice`, `pointsAlong`
 (sample points with tangents along a curve), `copy` (evaluate a template graph once per copy or
-once per input point, with `@i @n @u @px @py @a`), `merge`.
+once per input point, with `@i @n @u @px @py @a`, and a stamp transform `x y rot scale` per copy:
+radial copies are `rot: '@i/@n*TAU'`, mirrors are `scale: -1`), `merge`.
+
+`shot` embeds another scene: its marks at a time offset, for a duration, with that scene's iris
+or a hard cut. A composition is a scene whose graph is shots merged into marks and printed.
 
 `field` builds a field from an expression of `@x @y`.
 
@@ -112,7 +117,9 @@ The halftone, as data, in `risoInk`: `stencil → shift → multiply(noise tone)
 compare(screen) → max(solid where the stencil is nearly full) → multiply(gate, density, mottle,
 grain, speckle) → ink`. `risoPrint` multiplies paper with three of these.
 
-Every node also accepts `when` (an expression; falsy gives empty output) and `enabled`.
+Every node also accepts `when` (an expression; falsy gives empty output), `enabled`, and `bypass`
+(the input of the node's own kind passes through untouched; generators and mark makers have no
+such input and cannot be bypassed).
 
 ## Subnets
 
@@ -181,6 +188,24 @@ The iris, the ring and the disc are ordinary nodes. The runtime only supplies `i
 - Subnet transforms apply to geometry, widths, tint cells, clip shapes and fields, so a subnet
   renders the same at any position and scale.
 
+## Scenes so far
+
+| Scene | Frame | Built from |
+|---|---|---|
+| `jelly` | disc, iris | `water`, `stars`, three `jellyfish`, `bubble`, iris mask and ring nodes |
+| `fireworks` | full bleed, cut | two `sky` gradients (night, water), five `burst`, scattered glints copied to points, a skyline and boats as `polygon`, `dot` |
+| `mountains` | full bleed, cut | `sky` plus a radial sun haze, copied sun rings, three `ridge` layers, two `treeline` rows with a cut fog band between, `dot` |
+| `snow` | full bleed, cut | `sky`, three big `flake` prints in light pink, one detailed `flake` with a yellow hex core, a `webflake`, stars and sparkles, `dot` |
+| `main` | composition | `shot` nodes: jelly with its iris, then fireworks, snow and mountains as hard cuts, then jelly again |
+
+The film's montage section cuts every 3 frames; the jellyfish shot holds 12 frames inside an
+iris. Both timings are data on the `shot` nodes.
+
+What the new scenes taught the language: `polygon` for hand-placed silhouettes, `scatter` inside
+a shape for reflections and stars, stamp transforms on `copy` for snowflake arms and sun rings,
+`lin` for sky gradients, `shot` for composition. The subnets `sky`, `ridge`, `treeline`, `burst`
+and `flake` are general: any sunset, any forest, any firework.
+
 ## Read from the film
 
 - One blue dot with a pink centre sits at canvas position (540, 540) in every shot. Worlds appear
@@ -200,14 +225,16 @@ calls to another while a map is active.
 
 Film-level data on top: `shots: [{ world, at, in, out }]` with the iris timing per shot.
 
-The compositing layer is the `risoPrint` subnet. A film-level print means one `risoPrint` per
-shot with shared parameters through scene `let` values.
+The compositing layer is the `risoPrint` subnet. Every scene, including `main`, ends in its own
+`rasterize → risoPrint`; the composition prints the shots' marks together, so a cut is one print
+of the next world's marks.
 
 ## Editor
 
-`editor/` is a React app: a wired node graph view with pan and zoom, drag-to-wire, a search
-palette to add any catalog node or subnet, diving into subnets and copy templates with
-breadcrumbs, an inspector generated from the parameter schemas, the print tab (the `risoPrint`
-node's parameters), a display flag on any node so the viewport shows that value, undo/redo for
-every change including slider drags, autosave, and JSON export/import. Next: canvas gizmos for
-positions and radii, a timeline strip, a world index.
+`editor/` is a React app in three columns: the project (its scenes, with `main` the
+composition) and the parameters of the selection on the left, the network in the middle, the
+viewer on the right. Wired graph view with pan and zoom, drag-to-wire, a search palette for any
+catalog node or subnet, diving into subnets and copy templates with breadcrumbs, an inspector
+generated from the parameter schemas, a display flag on any node so the viewer shows that value,
+undo/redo for every change including slider drags, autosave, and JSON export/import. Next:
+canvas gizmos for positions and radii, a timeline strip for the shots, a world index.

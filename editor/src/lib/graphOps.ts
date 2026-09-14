@@ -7,7 +7,7 @@ const MULTI = ["list", "marks"];
 export function resolveGraph(doc: Doc, path: GraphPathStep[]): GraphDoc | null {
   let g: GraphDoc | undefined;
   for (const step of path) {
-    if (step.kind === "scene") g = doc.scene.graph;
+    if (step.kind === "scene") g = doc.scenes[step.name]?.graph;
     else if (step.kind === "lib") g = doc.lib[step.type]?.graph;
     else g = g?.nodes[step.node]?.template;
     if (!g) return null;

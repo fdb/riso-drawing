@@ -22,16 +22,17 @@ export function phaseName(time, tr, loopHold) {
 }
 
 export class SceneRunner {
-  constructor(res, scene) { this.res = res; this.scene = scene; this.cache = new Map(); }
+  // scenes: registry used by `shot` nodes
+  constructor(res, scene, scenes = null) { this.res = res; this.scene = scene; this.scenes = scenes; this.cache = new Map(); }
   // display: { path, id } shows that node's value instead of the graph output
   render(ctx, time, frame, { loopHold = false, display = null } = {}) {
     const sc = this.scene;
     const iris = irisScale(time, sc.transition, loopHold);
     const cyc = cycleLength(sc.transition), u = ((time % cyc) + cyc) % cyc;
     const probe = display ? { path: display.path, id: display.id, result: undefined } : null;
-    let value = evalScene(sc, { t: time, u, iris, f: frame, res: this.res, cache: this.cache, probe });
+    let value = evalScene(sc, { t: time, u, iris, f: frame, res: this.res, cache: this.cache, probe, scenes: this.scenes });
     if (probe) {
-      if (probe.result === undefined && display.path === '') value = evalScene(sc, { t: time, u, iris, f: frame, res: this.res, cache: this.cache, node: display.id });
+      if (probe.result === undefined && display.path === '') value = evalScene(sc, { t: time, u, iris, f: frame, res: this.res, cache: this.cache, node: display.id, scenes: this.scenes });
       else if (probe.result !== undefined) value = probe.result;
     }
     drawValue(ctx, value, this.res);

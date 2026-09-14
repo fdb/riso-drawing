@@ -15,33 +15,33 @@ describe("history", () => {
 
   it("commit / undo / redo restore the document", () => {
     const s = useEditor.getState;
-    const before = s().doc.scene.seed;
-    s().commit((d) => (d.scene.seed = 42));
-    expect(s().doc.scene.seed).toBe(42);
+    const before = s().doc.scenes.jelly.seed;
+    s().commit((d) => (d.scenes.jelly.seed = 42));
+    expect(s().doc.scenes.jelly.seed).toBe(42);
     s().undo();
-    expect(s().doc.scene.seed).toBe(before);
+    expect(s().doc.scenes.jelly.seed).toBe(before);
     s().redo();
-    expect(s().doc.scene.seed).toBe(42);
+    expect(s().doc.scenes.jelly.seed).toBe(42);
   });
 
   it("a drag is one undo step", () => {
     const s = useEditor.getState;
     s().beginDrag();
-    s().drag((d) => (d.scene.seed = 10));
-    s().drag((d) => (d.scene.seed = 11));
-    s().drag((d) => (d.scene.seed = 12));
+    s().drag((d) => (d.scenes.jelly.seed = 10));
+    s().drag((d) => (d.scenes.jelly.seed = 11));
+    s().drag((d) => (d.scenes.jelly.seed = 12));
     s().endDrag();
-    expect(s().doc.scene.seed).toBe(12);
+    expect(s().doc.scenes.jelly.seed).toBe(12);
     expect(s().past.length).toBe(1);
     s().undo();
-    expect(s().doc.scene.seed).toBe(5);
+    expect(s().doc.scenes.jelly.seed).toBe(5);
   });
 
   it("a new commit clears redo", () => {
     const s = useEditor.getState;
-    s().commit((d) => (d.scene.seed = 1));
+    s().commit((d) => (d.scenes.jelly.seed = 1));
     s().undo();
-    s().commit((d) => (d.scene.seed = 2));
+    s().commit((d) => (d.scenes.jelly.seed = 2));
     expect(s().future.length).toBe(0);
   });
 });
@@ -49,7 +49,9 @@ describe("history", () => {
 describe("graph ops", () => {
   it("add, connect, rename, remove keep references consistent", () => {
     const doc = useEditor.getState().doc;
-    const g = structuredClone(resolveGraph(doc, [{ kind: "scene" }])!);
+    const g = structuredClone(
+      resolveGraph(doc, [{ kind: "scene", name: "jelly" }])!,
+    );
     const c = addNode(g, "circle", [0, 0]);
     const f = addNode(g, "fill", [200, 0]);
     expect(connect(g, c, f, "geo")).toBe(true);

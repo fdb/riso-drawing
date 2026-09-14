@@ -8,6 +8,8 @@ export interface NodeDoc {
   template?: GraphDoc;
   when?: string | number;
   enabled?: boolean;
+  /** pass the matching input through untouched */
+  bypass?: boolean;
   pos?: [number, number];
 }
 
@@ -15,6 +17,8 @@ export interface GraphDoc {
   let?: Record<string, string | number>;
   nodes: Record<string, NodeDoc>;
   output: string;
+  /** the marks node other scenes embed through `shot` */
+  marks?: string;
 }
 
 export interface Transition {
@@ -29,7 +33,10 @@ export interface SceneDoc {
   name: string;
   about?: string;
   seed: number;
-  transition: Transition;
+  /** iris timing when shown on its own; null for hard-cut worlds and compositions */
+  transition: Transition | null;
+  /** loop length in seconds (compositions) */
+  duration?: number;
   graph: GraphDoc;
 }
 
@@ -60,13 +67,13 @@ export interface NodeSpec {
 }
 
 export interface Doc {
-  scene: SceneDoc;
+  scenes: Record<string, SceneDoc>;
   lib: Record<string, SubnetDoc>;
 }
 
 /** Where the graph view is looking: the scene, a subnet, then nested copy templates. */
 export type GraphPathStep =
-  | { kind: "scene" }
+  | { kind: "scene"; name: string }
   | { kind: "lib"; type: string; via?: string }
   | { kind: "template"; node: string };
 

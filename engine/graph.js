@@ -12,12 +12,12 @@ import { TAU, mulberry32, clamp01, dist, makeNoise } from './riso.js';
 //   $name               a subnet parameter or a `let` value
 //   @name               an attribute of the current point, primitive or copy (x y v i n u px py a w pw …)
 //   rand(k)             stable random 0..1 for this graph path (and point / copy) and key k
-//   noise(x,y,scale,seed) radial(x,y,cx,cy,r) dist(x,y,x2,y2) clamp(v) ease(v)
+//   noise(x,y,scale,seed) radial(x,y,cx,cy,r) lin(x,y,x0,y0,x1,y1) dist(x,y,x2,y2) clamp(v) ease(v)
 //   f                   frame index
 //   sin cos abs min max pow sqrt floor round PI TAU
 
 // ---------------- expressions ----------------
-const EXPR_ARGS = ['A', 'V', 'T', 'rand', 'noise', 'radial', 'dist', 'clamp', 'ease',
+const EXPR_ARGS = ['A', 'V', 'T', 'rand', 'noise', 'radial', 'lin', 'dist', 'clamp', 'ease',
   'sin', 'cos', 'abs', 'min', 'max', 'pow', 'sqrt', 'floor', 'round', 'PI', 'TAU'];
 const EXPR_FN = {};
 export function compileExpr(src) {
@@ -46,6 +46,7 @@ function noiseAt(x, y, scale, seed = 0) {
   return NOISES[k](x / scale, y / scale);
 }
 const radialAt = (x, y, cx, cy, r) => clamp01(1 - Math.hypot(x - cx, y - cy) / r);
+const linAt = (x, y, x0, y0, x1, y1) => { const dx = x1 - x0, dy = y1 - y0; return clamp01(((x - x0) * dx + (y - y0) * dy) / (dx * dx + dy * dy)); };
 function hash32(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
 export const hrand = (seed, path, k) => mulberry32(hash32(seed + '|' + path + '|' + k))();
 
@@ -53,7 +54,7 @@ export const hrand = (seed, path, k) => mulberry32(hash32(seed + '|' + path + '|
 export function evalExpr(v, ctx, A = ctx.A, path = ctx.path) {
   if (typeof v !== 'string' || v === '') return v;
   const rand = k => hrand(ctx.seed, path, k);
-  return compileExpr(v)(A, ctx.V, ctx.T, rand, noiseAt, radialAt, dist, clamp01, easeOutCubic,
+  return compileExpr(v)(A, ctx.V, ctx.T, rand, noiseAt, radialAt, linAt, dist, clamp01, easeOutCubic,
     Math.sin, Math.cos, Math.abs, Math.min, Math.max, Math.pow, Math.sqrt, Math.floor, Math.round, Math.PI, TAU);
 }
 // evaluate all scalar params; objects (templates, attr maps) pass through untouched
@@ -64,6 +65,7 @@ export function evalParams(schema, params, ctx) {
   for (const k in p) {
     const kind = schema[k] && schema[k].kind;
     // literal kinds (ink, mode, colour, text) stay as written unless they reference a $value
+    if (kind === 'points') continue;
     if ((kind === 'ink' || kind === 'mode' || kind === 'color' || kind === 'text') && !(typeof p[k] === 'string' && p[k].startsWith('$'))) continue;
     if (typeof p[k] === 'string' || typeof p[k] === 'number' || typeof p[k] === 'boolean') p[k] = evalExpr(p[k], ctx);
   }
@@ -184,9 +186,23 @@ def('walk', { label: 'Walk (turtle)', cat: 'geo', out: 'geo',
 def('lens', { label: 'Lens', cat: 'geo', out: 'geo',
   params: { len: N(20, 0, 300, 0.5), wid: N(5, 0, 100, 0.5), n: N(12, 2, 60, 1) },
   fn: (i, p) => { const m = Math.round(p.n), pts = []; for (let k = 0; k < m; k++) { const v = k / m, x = -p.len + 2 * p.len * v; pts.push([x, -p.wid * 4 * v * (1 - v) / 2]); } for (let k = m; k > 0; k--) { const v = k / m, x = -p.len + 2 * p.len * v; pts.push([x, p.wid * 4 * v * (1 - v) / 2]); } return geo([prim(pts, true)]); } });
-def('scatter', { label: 'Scatter in disc', cat: 'geo', out: 'geo',
-  params: { x: N(540, 0, 1080, 1), y: N(540, 0, 1080, 1), r: N(300, 0, 800, 1), count: N(100, 0, 2000, 1) },
-  fn: (i, p, ctx, node, id) => { const n = Math.round(p.count), prims = []; for (let k = 0; k < n; k++) { const a = hrand(ctx.seed, ctx.path + '/' + id, k * 2) * TAU, d = Math.sqrt(hrand(ctx.seed, ctx.path + '/' + id, k * 2 + 1)) * p.r; prims.push(prim([[p.x + Math.cos(a) * d, p.y + Math.sin(a) * d]], false, { i: k })); } return geo(prims); } });
+def('scatter', { label: 'Scatter', cat: 'geo', out: 'geo', inputs: ['geo'],
+  params: { x: N(540, 0, 1080, 1), y: N(540, 0, 1080, 1), r: N(300, 0, 800, 1, 'radius (no shape wired)'), count: N(100, 0, 4000, 1) },
+  fn: (i, p, ctx, node, id) => {
+    const n = Math.round(p.count), prims = [], path = ctx.path + '/' + id, shape = node.in && node.in.geo && i.geo.prims.length ? i.geo : null;
+    if (!shape) { for (let k = 0; k < n; k++) { const a = hrand(ctx.seed, path, k * 2) * TAU, d = Math.sqrt(hrand(ctx.seed, path, k * 2 + 1)) * p.r; prims.push(prim([[p.x + Math.cos(a) * d, p.y + Math.sin(a) * d]], false, { i: k })); } return geo(prims); }
+    // uniform inside the wired polygons: rejection sampling over the bounds
+    const [x0, y0, x1, y1] = geoBounds(shape); let tries = 0;
+    for (let k = 0; prims.length < n && tries < n * 40; tries++) {
+      const x = x0 + hrand(ctx.seed, path, tries * 2) * (x1 - x0), y = y0 + hrand(ctx.seed, path, tries * 2 + 1) * (y1 - y0);
+      if (shape.prims.some(pr => insidePoly(pr.pts, x, y))) prims.push(prim([[x, y]], false, { i: prims.length }));
+    }
+    return geo(prims);
+  } });
+function insidePoly(pts, x, y) { let c = false; for (let a = 0, b = pts.length - 1; a < pts.length; b = a++) { const [xa, ya] = pts[a], [xb, yb] = pts[b]; if (((ya > y) !== (yb > y)) && x < (xb - xa) * (y - ya) / (yb - ya) + xa) c = !c; } return c; }
+def('polygon', { label: 'Polygon (points)', cat: 'geo', out: 'geo',
+  params: { pts: { def: '0 0 100 0 100 100', kind: 'points', label: 'x y pairs (each may be an expression)' }, closed: N(1, 0, 1, 1) },
+  fn: (i, p, ctx) => { const v = String(p.pts).trim().split(/[\s,]+/).map(tok => (/^-?[\d.]+$/.test(tok) ? +tok : Number(evalExpr(tok, ctx)))), pts = []; for (let k = 0; k + 1 < v.length; k += 2) pts.push([v[k], v[k + 1]]); return geo(pts.length ? [prim(pts, !!p.closed)] : []); } });
 def('point', { label: 'Point', cat: 'geo', out: 'geo', params: { x: N(0, -1080, 1080, 1), y: N(0, -1080, 1080, 1) }, fn: (i, p) => geo([prim([[p.x, p.y]])]) });
 
 // ---- operators ----
@@ -243,7 +259,7 @@ def('pointsAlong', { label: 'Points along', cat: 'geo', out: 'geo', inputs: ['ge
     return geo(prims);
   } });
 def('copy', { label: 'Copy template', cat: 'geo', out: 'geo', inputs: ['points'],
-  params: { n: N(1, 0, 200, 1, 'copies (when no points)'), orient: N(1, 0, 1, 1, 'rotate to @a'), dx: E('0'), dy: E('0') },
+  params: { n: N(1, 0, 400, 1, 'copies (when no points)'), orient: N(1, 0, 1, 1, 'rotate to @a'), x: E('0', 'stamp x (+ point x)'), y: E('0', 'stamp y (+ point y)'), rot: E('0', 'stamp rotation'), scale: E('1', 'stamp scale') },
   fn: (i, p, ctx, node, id) => {
     const tpl = node.template; if (!tpl || !tpl.nodes || !tpl.nodes[tpl.output]) return EMPTY_GEO();
     const pts = node.in && node.in.points ? flatPoints(i.points) : null, n = pts ? pts.length : Math.round(p.n), prims = [];
@@ -253,10 +269,10 @@ def('copy', { label: 'Copy template', cat: 'geo', out: 'geo', inputs: ['points']
       const c2 = { ...ctx, A, V: Object.create(ctx.V), path: ctx.path + '/' + id + '#' + k };
       ctx.T.used = false; applyLet(tpl, c2); c2.dyn = ctx.dyn || ctx.T.used;
       let g = evalNode(tpl, tpl.output, c2);
-      if (pts) {
-        const dx = evalExpr(node.params.dx !== undefined ? node.params.dx : 0, c2), dy = evalExpr(node.params.dy !== undefined ? node.params.dy : 0, c2);
-        g = transformGeo(g, mat(pts[k].x + dx, pts[k].y + dy, p.orient ? (A.a || 0) : 0));
-      }
+      const sx = evalExpr(node.params.x !== undefined ? node.params.x : 0, c2), sy = evalExpr(node.params.y !== undefined ? node.params.y : 0, c2);
+      const sr = evalExpr(node.params.rot !== undefined ? node.params.rot : 0, c2), ss = evalExpr(node.params.scale !== undefined ? node.params.scale : 1, c2);
+      if (pts) g = transformGeo(g, mat(pts[k].x + sx, pts[k].y + sy, (p.orient ? (A.a || 0) : 0) + sr, ss));
+      else if (sx || sy || sr || ss !== 1) g = transformGeo(g, mat(sx, sy, sr, ss));
       prims.push(...g.prims);
     }
     return geo(prims);
@@ -265,7 +281,7 @@ def('copy', { label: 'Copy template', cat: 'geo', out: 'geo', inputs: ['points']
 // ---- fields ----
 def('field', { label: 'Field', cat: 'field', out: 'field', params: { expr: E('1', 'tone at @x @y') },
   fn: (i, p, ctx, node) => { const src = node.params.expr !== undefined ? node.params.expr : '1'; const f = compileExpr(src); const rand = k => hrand(ctx.seed, ctx.path, k);
-    return { sample: (x, y) => f({ ...ctx.A, x, y }, ctx.V, ctx.T, rand, noiseAt, radialAt, dist, clamp01, easeOutCubic, Math.sin, Math.cos, Math.abs, Math.min, Math.max, Math.pow, Math.sqrt, Math.floor, Math.round, Math.PI, TAU), dyn: exprIsDynamic(src) }; } });
+    return { sample: (x, y) => f({ ...ctx.A, x, y }, ctx.V, ctx.T, rand, noiseAt, radialAt, linAt, dist, clamp01, easeOutCubic, Math.sin, Math.cos, Math.abs, Math.min, Math.max, Math.pow, Math.sqrt, Math.floor, Math.round, Math.PI, TAU), dyn: exprIsDynamic(src) }; } });
 
 // ---- marks ----
 const mk = (kind, props) => ({ kind, clip: [], ...props });
@@ -286,6 +302,33 @@ def('mask', { label: 'Mask (keep inside)', cat: 'mark', out: 'marks', inputs: ['
 def('clip', { label: 'Clip marks', cat: 'mark', out: 'marks', inputs: ['marks', 'geo'], params: {},
   fn: i => flatMarks(i.marks).map(m => ({ ...m, clip: [...m.clip, i.geo] })) });
 const flatMarks = v => Array.isArray(v) && v.length && Array.isArray(v[0]) ? [].concat(...v) : v;
+
+// ---- shot: the marks of another scene, at a time offset, with an iris or a hard cut ----
+def('shot', { label: 'Shot (scene)', cat: 'util', out: 'marks',
+  params: { scene: { def: 'jelly', kind: 'text' }, at: N(0, 0, 120, 0.01, 'start (s)'), dur: N(1, 0, 60, 0.01, 'duration (s)'), mode: { def: 'iris', kind: 'text', label: 'iris | cut' } },
+  fn(i, p, ctx, node, id) {
+    const sc = ctx.scenes && ctx.scenes[p.scene]; if (!sc) return [];
+    const T = ctx.T, t = T.t - p.at;   // reading time makes the shot dynamic, as it should be
+    if (t < 0 || t >= p.dur) return [];
+    const tr = sc.transition, iris = p.mode === 'cut' || !tr ? 1 : irisAt(t, p.dur, tr);
+    const c2 = { ...ctx, T: timeTracker(t, t, T.f, iris), V: {}, A: {}, path: ctx.path + '/' + id, scene: sc, seed: sc.seed, memo: ctx.memo };
+    Object.defineProperty(c2.T, 'used', { value: true, writable: true });
+    applyLet(sc.graph, c2);
+    const out = evalNode(sc.graph, sc.graph.marks || 'marks', c2);
+    T.used = true;
+    return Array.isArray(out) ? out.map(m => ({ ...m, dyn: true })) : [];
+  } });
+// iris scale for a shot: open at the start, close at the end
+function irisAt(t, dur, tr) {
+  if (t < tr.open) return easeOutCubic(t / tr.open);
+  const rem = dur - t; if (rem < tr.close) { const x = 1 - rem / tr.close; return 1 - x * x * x; }
+  return 1;
+}
+
+// which input a bypassed node passes through: the one of its own output kind
+const BYPASS = { geo: ['geo', 'points'], marks: ['marks', 'list'], image: ['image', 'a', 'list'], any: ['list'] };
+export function bypassPort(spec) { const names = BYPASS[spec.out] || []; return names.find(n => spec.inputs.includes(n)) || null; }
+const flatMarksOrGeo = list => { const L = list.filter(Boolean); if (!L.length) return []; if (Array.isArray(L[0])) return [].concat(...L); if (L[0].prims) return geo([].concat(...L.map(g => g.prims))); return L[0]; };
 
 // ---- subnet input ----
 def('input', { label: 'Subnet input', cat: 'util', out: 'any', params: { name: { def: 'in', kind: 'text' } },
@@ -321,6 +364,10 @@ export function evalNode(graph, id, ctx) {
   const T = ctx.T, outerUsed = T.used; T.used = false;
   let out;
   if (node.enabled === false || (node.when !== undefined && !evalExpr(node.when, ctx))) out = EMPTY[kind]();
+  else if (node.bypass && spec && bypassPort(spec)) {   // pass the matching input through untouched
+    const v = inp[bypassPort(spec)];
+    out = v === undefined ? EMPTY[kind]() : Array.isArray(v) && bypassPort(spec) === 'list' ? (kind === 'marks' || kind === 'any' ? flatMarksOrGeo(v) : v[0]) : v;
+  }
   else if (lib) out = evalSubnet(lib, node, id, ctx, inp);
   else {
     const p = evalParams(spec.params, node.params || {}, ctx);
@@ -362,8 +409,8 @@ function evalSubnet(lib, node, id, ctx, inputs) {
 
 // Evaluate a scene graph. Returns the output value; `probe` ({path, id}) captures one node's value on the way.
 // `cache` is a Map that survives across frames (stencils, static rasters); `node` evaluates a top-level node instead of the output.
-export function evalScene(scene, { t = 0, u = 0, iris = 1, f = 0, res = 1080, cache = new Map(), probe = null, node = null }) {
-  const ctx = { t, u, iris, f, res, seed: scene.seed, T: timeTracker(t, u, f, iris), V: {}, A: {}, path: '', memo: new Map(), dyn: false, cache, probe };
+export function evalScene(scene, { t = 0, u = 0, iris = 1, f = 0, res = 1080, cache = new Map(), probe = null, node = null, scenes = null }) {
+  const ctx = { t, u, iris, f, res, seed: scene.seed, T: timeTracker(t, u, f, iris), V: {}, A: {}, path: '', memo: new Map(), dyn: false, cache, probe, scenes };
   applyLet(scene.graph, ctx); ctx.dyn = ctx.T.used;
   return evalNode(scene.graph, node || scene.graph.output, ctx);
 }

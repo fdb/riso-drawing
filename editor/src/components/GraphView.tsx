@@ -1,15 +1,29 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Plus, LayoutGrid, Maximize2, ChevronRight } from "lucide-react";
+import {
+  Plus,
+  LayoutGrid,
+  Maximize2,
+  ChevronRight,
+  Eye,
+  Ban,
+} from "lucide-react";
 import { useEditor } from "../store/editor";
 import { resolveGraph, connect, edgesOf } from "../lib/graphOps";
 import {
   layoutPositions,
-  nodeHeight,
   NODE_W,
-  HEAD_H,
-  ROW_H,
+  NODE_H,
+  portX,
+  inputIndex,
 } from "../lib/layout";
-import { inputsOf, isSubnet, nodeLabel, catOf, evalPath } from "../lib/engine";
+import {
+  inputsOf,
+  isSubnet,
+  nodeLabel,
+  catOf,
+  evalPath,
+  bypassPortOf,
+} from "../lib/engine";
 import type { GraphDoc, GraphPathStep, Selection } from "../lib/types";
 
 interface Cam {
@@ -17,23 +31,26 @@ interface Cam {
   y: number;
   k: number;
 }
-const portY = (i: number) => HEAD_H + 14 + i * ROW_H;
+/** a wire from an output (bottom of a node) down to an input (top of a node) */
 const edgePath = (x0: number, y0: number, x1: number, y1: number) => {
-  const dx = Math.max(40, Math.abs(x1 - x0) * 0.5);
-  return `M ${x0} ${y0} C ${x0 + dx} ${y0}, ${x1 - dx} ${y1}, ${x1} ${y1}`;
+  const dy = Math.max(30, Math.abs(y1 - y0) * 0.5);
+  return `M ${x0} ${y0} C ${x0} ${y0 + dy}, ${x1} ${y1 - dy}, ${x1} ${y1}`;
 };
-
-function crumbs(path: GraphPathStep[]): string[] {
-  return path.map((s) =>
+const crumbs = (path: GraphPathStep[]) =>
+  path.map((s) =>
     s.kind === "scene"
-      ? "scene"
+      ? s.name
       : s.kind === "lib"
         ? s.type
         : `${s.node} (template)`,
   );
-}
 
-/** Node graph with wiring: drag nodes, drag from an output port onto an input port, click an edge to select it. */
+/**
+ * Node graph, top to bottom: inputs along a node's top edge, its output at the bottom.
+ * Drag nodes, drag the output port onto an input port to wire, click an edge to select it.
+ * Each node has a render flag (the viewer shows its value) and, when it has an input of its own
+ * kind, a bypass flag (the input passes through untouched).
+ */
 export function GraphView() {
   const doc = useEditor((s) => s.doc);
   const graphPath = useEditor((s) => s.graphPath);
@@ -44,6 +61,7 @@ export function GraphView() {
   const commit = useEditor((s) => s.commit);
   const setUi = useEditor((s) => s.setUi);
   const display = useEditor((s) => s.ui.display);
+  const sceneName = useEditor((s) => s.sceneName);
 
   const graph: GraphDoc | null = useMemo(
     () => resolveGraph(doc, graphPath),
@@ -74,6 +92,7 @@ export function GraphView() {
     moved: boolean;
   } | null>(null);
   const lastMouse = useRef<[number, number]>([120, 120]);
+  const dragOff = useRef<[number, number]>([0, 0]);
 
   const toGraph = (clientX: number, clientY: number): [number, number] => {
     const r = svgRef.current!.getBoundingClientRect();
@@ -83,7 +102,6 @@ export function GraphView() {
     ];
   };
 
-  // fit the view when the graph path changes
   useEffect(() => {
     fit();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -102,14 +120,17 @@ export function GraphView() {
       x0 = Math.min(x0, x);
       y0 = Math.min(y0, y);
       x1 = Math.max(x1, x + NODE_W);
-      y1 = Math.max(y1, y + nodeHeight(graph.nodes[id].type));
+      y1 = Math.max(y1, y + NODE_H);
     }
     const r = svgRef.current.getBoundingClientRect();
     const k = Math.min(
-      1.2,
+      1.25,
       Math.max(
-        0.25,
-        Math.min((r.width - 40) / (x1 - x0), (r.height - 40) / (y1 - y0)),
+        0.2,
+        Math.min(
+          (r.width - 40) / (x1 - x0 + 20),
+          (r.height - 40) / (y1 - y0 + 20),
+        ),
       ),
     );
     setCam({
@@ -123,14 +144,13 @@ export function GraphView() {
     const r = svgRef.current!.getBoundingClientRect();
     const mx = e.clientX - r.left,
       my = e.clientY - r.top;
-    const k = Math.min(3, Math.max(0.2, cam.k * Math.exp(-e.deltaY * 0.0015)));
+    const k = Math.min(3, Math.max(0.15, cam.k * Math.exp(-e.deltaY * 0.0015)));
     setCam({
       k,
       x: mx - ((mx - cam.x) * k) / cam.k,
       y: my - ((my - cam.y) * k) / cam.k,
     });
   };
-
   const onBgDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
     pan.current = {
@@ -175,8 +195,8 @@ export function GraphView() {
       pan.current = null;
     }
     if (drag) {
-      const d = drag;
-      const snapshot = pos;
+      const d = drag,
+        snapshot = pos;
       commit((doc) => {
         const g = resolveGraph(doc, graphPath);
         if (!g?.nodes[d.id]) return;
@@ -204,8 +224,6 @@ export function GraphView() {
       setHoverPort(null);
     }
   };
-
-  const dragOff = useRef<[number, number]>([0, 0]);
   const onNodeDown = (e: React.PointerEvent, id: string) => {
     if (e.button !== 0) return;
     e.stopPropagation();
@@ -241,10 +259,17 @@ export function GraphView() {
     !!display && display.path === viewPath && display.id === id;
   const toggleDisplay = (id: string) =>
     setUi({ display: isDisplayed(id) ? null : { path: viewPath, id } });
+  const toggleBypass = (id: string) =>
+    commit((doc) => {
+      const g = resolveGraph(doc, graphPath);
+      if (g?.nodes[id])
+        g.nodes[id].bypass = g.nodes[id].bypass ? undefined : true;
+    });
   const crumbList = crumbs(graphPath);
   const posOf = (id: string): [number, number] =>
     drag?.id === id ? [drag.x, drag.y] : pos[id];
   const isSel = (s: Selection, id: string) => s?.kind === "node" && s.id === id;
+  const stop = (e: React.PointerEvent) => e.stopPropagation();
 
   return (
     <div className="graphview">
@@ -264,7 +289,7 @@ export function GraphView() {
           {graphPath[0].kind === "lib" && (
             <button
               className="ghost"
-              onClick={() => setPath([{ kind: "scene" }])}
+              onClick={() => setPath([{ kind: "scene", name: sceneName }])}
             >
               ← scene
             </button>
@@ -276,7 +301,7 @@ export function GraphView() {
           </button>
           <button
             onClick={autoLayout}
-            title="Forget stored positions and lay out by depth"
+            title="Forget stored positions and lay out top to bottom"
           >
             <LayoutGrid size={14} /> layout
           </button>
@@ -284,8 +309,8 @@ export function GraphView() {
             <Maximize2 size={14} />
           </button>
           <span className="hint">
-            drag output ● to an input ● to wire · double-click to dive in · Tab
-            adds · Delete removes
+            drag ● to an input ● to wire · double-click dives in · Tab adds ·
+            Delete removes · flags: render, bypass
           </span>
         </div>
       </div>
@@ -311,7 +336,7 @@ export function GraphView() {
             {edges.map((e) => {
               const [x0, y0] = posOf(e.from),
                 [x1, y1] = posOf(e.to);
-              const i = inputsOf(graph.nodes[e.to].type).indexOf(e.port);
+              const i = inputIndex(graph.nodes[e.to].type, e.port);
               const sel =
                 selection?.kind === "edge" &&
                 selection.from === e.from &&
@@ -321,12 +346,7 @@ export function GraphView() {
                 <path
                   key={`${e.from}>${e.to}.${e.port}`}
                   className={`edge cat-${catOf(graph.nodes[e.from].type)} ${sel ? "selected" : ""}`}
-                  d={edgePath(
-                    x0 + NODE_W,
-                    y0 + nodeHeight(graph.nodes[e.from].type) / 2,
-                    x1,
-                    y1 + portY(Math.max(0, i)),
-                  )}
+                  d={edgePath(x0 + NODE_W / 2, y0 + NODE_H, x1 + portX(i), y1)}
                   onPointerDown={(ev) => {
                     ev.stopPropagation();
                     select({ kind: "edge", ...e });
@@ -338,9 +358,8 @@ export function GraphView() {
               <path
                 className="edge wire"
                 d={edgePath(
-                  posOf(wire.from)[0] + NODE_W,
-                  posOf(wire.from)[1] +
-                    nodeHeight(graph.nodes[wire.from].type) / 2,
+                  posOf(wire.from)[0] + NODE_W / 2,
+                  posOf(wire.from)[1] + NODE_H,
                   wire.x,
                   wire.y,
                 )}
@@ -348,14 +367,23 @@ export function GraphView() {
             )}
             {Object.entries(graph.nodes).map(([id, n]) => {
               const [x, y] = posOf(id);
-              const h = nodeHeight(n.type);
               const ins = inputsOf(n.type);
               const cat = catOf(n.type);
-              const dive = isSubnet(n.type) || !!n.template;
+              const canDive = isSubnet(n.type) || !!n.template;
+              const canBypass = !!bypassPortOf(n.type);
+              const cls = [
+                "node",
+                `cat-${cat}`,
+                isSel(selection, id) ? "selected" : "",
+                graph.output === id ? "output" : "",
+                n.enabled === false ? "off" : "",
+                n.bypass ? "bypassed" : "",
+                isDisplayed(id) ? "displayed" : "",
+              ].join(" ");
               return (
                 <g
                   key={id}
-                  className={`node cat-${cat} ${isSel(selection, id) ? "selected" : ""} ${graph.output === id ? "output" : ""} ${n.enabled === false ? "off" : ""} ${isDisplayed(id) ? "displayed" : ""}`}
+                  className={cls}
                   transform={`translate(${x} ${y})`}
                   data-testid={`node-${id}`}
                   data-nodeid={id}
@@ -363,60 +391,83 @@ export function GraphView() {
                   <rect
                     className="body"
                     width={NODE_W}
-                    height={h}
+                    height={NODE_H}
                     onPointerDown={(e) => onNodeDown(e, id)}
                   />
                   <rect
-                    className="head"
-                    width={NODE_W}
-                    height={HEAD_H}
+                    className="stripe"
+                    width={4}
+                    height={NODE_H}
                     onPointerDown={(e) => onNodeDown(e, id)}
                   />
-                  <text className="title" x={8} y={16}>
+                  <text className="title" x={11} y={18}>
                     {id}
                   </text>
-                  <text className="type" x={NODE_W - 8} y={16} textAnchor="end">
+                  <text className="type" x={11} y={33}>
                     {nodeLabel(n.type)}
-                    {dive ? " ▸" : ""}
+                    {canDive ? " ▸" : ""}
+                    {n.when !== undefined ? " · when" : ""}
                   </text>
                   {ins.map((p, i) => (
-                    <g key={p} transform={`translate(0 ${portY(i)})`}>
+                    <g key={p} transform={`translate(${portX(i)} 0)`}>
                       <circle
                         className={`port in ${hoverPort?.id === id && hoverPort.port === p ? "hot" : ""}`}
                         r={5}
                         data-node={id}
                         data-port={p}
-                        onPointerDown={(e) => e.stopPropagation()}
-                      />
-                      <text className="port-label" x={10} y={4}>
+                        onPointerDown={stop}
+                      >
+                        <title>{p}</title>
+                      </circle>
+                      <text
+                        className="port-label"
+                        x={0}
+                        y={-8}
+                        textAnchor="middle"
+                      >
                         {p}
                       </text>
                     </g>
                   ))}
                   <circle
                     className="port out"
-                    cx={NODE_W}
-                    cy={h / 2}
+                    cx={NODE_W / 2}
+                    cy={NODE_H}
                     r={5}
                     onPointerDown={(e) => onOutDown(e, id)}
-                  />
-                  <circle
-                    className={`eye ${isDisplayed(id) ? "on" : ""}`}
-                    cx={NODE_W - 10}
-                    cy={h - 9}
-                    r={4.5}
+                  >
+                    <title>output: drag to an input</title>
+                  </circle>
+                  {/* flags: render (the viewer shows this node) and bypass (input passes through) */}
+                  <g
+                    className={`flag render ${isDisplayed(id) ? "on" : ""}`}
+                    transform={`translate(${NODE_W - 22} 5)`}
                     data-testid={`eye-${id}`}
                     onPointerDown={(e) => {
                       e.stopPropagation();
                       toggleDisplay(id);
                     }}
                   >
-                    <title>display this node in the viewport</title>
-                  </circle>
-                  {n.when !== undefined && (
-                    <text className="when" x={8} y={h - 6}>
-                      when {String(n.when)}
-                    </text>
+                    <rect width={16} height={16} />
+                    <Eye x={2} y={2} width={12} height={12} />
+                    <title>render this node in the viewer</title>
+                  </g>
+                  {canBypass && (
+                    <g
+                      className={`flag bypass ${n.bypass ? "on" : ""}`}
+                      transform={`translate(${NODE_W - 22} ${NODE_H - 21})`}
+                      data-testid={`bypass-${id}`}
+                      onPointerDown={(e) => {
+                        e.stopPropagation();
+                        toggleBypass(id);
+                      }}
+                    >
+                      <rect width={16} height={16} />
+                      <Ban x={2} y={2} width={12} height={12} />
+                      <title>
+                        bypass: pass the {bypassPortOf(n.type)} input through
+                      </title>
+                    </g>
                   )}
                 </g>
               );

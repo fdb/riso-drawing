@@ -4,7 +4,7 @@ import { Toolbar } from "./components/Toolbar";
 import { Viewport } from "./components/Viewport";
 import { GraphView } from "./components/GraphView";
 import { Inspector } from "./components/Inspector";
-import { PrintPanel } from "./components/PrintPanel";
+import { ProjectPanel } from "./components/ProjectPanel";
 import { Palette } from "./components/Palette";
 import {
   resolveGraph,
@@ -24,10 +24,9 @@ const inField = (e: KeyboardEvent) => {
   );
 };
 
+/** Project and parameters on the left, the network in the middle, the viewer on the right. */
 export default function App() {
   const theme = useEditor((s) => s.ui.theme);
-  const panel = useEditor((s) => s.ui.panel);
-  const setUi = useEditor((s) => s.setUi);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -88,32 +87,19 @@ export default function App() {
   return (
     <div className="app">
       <Toolbar />
-      <div className="main">
-        <div className="stage">
-          <Viewport />
-        </div>
-        <aside className="panel">
-          <div className="tabs">
-            <button
-              className={panel === "inspector" ? "on" : ""}
-              onClick={() => setUi({ panel: "inspector" })}
-            >
-              Inspector
-            </button>
-            <button
-              className={panel === "print" ? "on" : ""}
-              onClick={() => setUi({ panel: "print" })}
-            >
-              Print
-            </button>
-          </div>
-          <div className="panel-body">
-            {panel === "inspector" ? <Inspector /> : <PrintPanel />}
+      <div className="columns">
+        <aside className="left">
+          <ProjectPanel />
+          <div className="params">
+            <Inspector />
           </div>
         </aside>
-      </div>
-      <div className="graph">
-        <GraphView />
+        <div className="network">
+          <GraphView />
+        </div>
+        <div className="viewer">
+          <Viewport />
+        </div>
       </div>
       <Palette />
     </div>

@@ -4,6 +4,7 @@ test.beforeEach(async ({ page }) => {
   await page.goto("/");
   await page.evaluate(() => localStorage.clear());
   await page.reload();
+  await page.getByTestId("scene-jelly").click();
 });
 
 test("renders the scene and shows the graph", async ({ page }) => {
@@ -17,7 +18,7 @@ test("renders the scene and shows the graph", async ({ page }) => {
 test("selecting a node opens its parameters; a slider change can be undone", async ({
   page,
 }) => {
-  await page.getByTestId("node-big").locator("rect.head").click();
+  await page.getByTestId("node-big").locator("rect.body").click();
   await expect(page.locator(".insp-head .id")).toHaveValue("big");
   const row = page.locator(".row", { hasText: "tentacles" });
   await expect(row.locator(".val")).toHaveText("24");
@@ -44,7 +45,7 @@ test("Tab opens the palette and adds a node; Delete removes it", async ({
 });
 
 test("double-click on a subnet dives into its graph", async ({ page }) => {
-  await page.getByTestId("node-big").locator("rect.head").dblclick();
+  await page.getByTestId("node-big").locator("rect.body").dblclick();
   await expect(page.locator(".crumbs button.on")).toHaveText("jellyfish");
   await expect(page.getByTestId("node-tent")).toBeVisible();
 });
@@ -58,8 +59,27 @@ test("the eye flag displays a node's value instead of the output", async ({
   await expect(page.getByTestId("hud")).toContainText("marks (marks)");
 });
 
-test("the print tab edits the risoPrint node", async ({ page }) => {
-  await page.getByRole("button", { name: "Print" }).click();
+test("scenes open from the project list; the print node carries the print parameters", async ({
+  page,
+}) => {
+  await page.getByTestId("scene-fireworks").click();
+  await expect(page.getByTestId("hud")).toContainText("fireworks");
+  await expect(page.getByTestId("node-b1")).toBeVisible();
+  await page.getByTestId("scene-jelly").click();
+  await page.getByTestId("node-print").locator("rect.body").click();
   await expect(page.locator(".insp-head .id")).toHaveValue("print");
   await expect(page.locator(".row", { hasText: "pink shift x" })).toBeVisible();
+});
+
+test("the bypass flag passes a node's input through", async ({ page }) => {
+  await page.getByTestId("bypass-worldClip").click();
+  await expect(page.getByTestId("node-worldClip")).toHaveClass(/bypassed/);
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(page.getByTestId("node-worldClip")).not.toHaveClass(/bypassed/);
+});
+
+test("main plays shots of other scenes", async ({ page }) => {
+  await page.getByTestId("scene-main").click();
+  await expect(page.getByTestId("node-s2")).toBeVisible();
+  await expect(page.getByTestId("hud")).toContainText("main");
 });

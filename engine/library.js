@@ -234,3 +234,198 @@ LIB.risoPrint = {
     output: 'out',
   },
 };
+
+// ---- sky: three ink gradients over a rectangle (top → bottom), with mottle ----
+LIB.sky = {
+  label: 'Sky gradient',
+  params: {
+    x: Q(0, 0, 1080, 1), y: Q(0, 0, 1080, 1), w: Q(1080, 0, 1080, 1), h: Q(1080, 0, 1080, 1),
+    blueTop: Q(0.9, 0, 1.3), blueBottom: Q(0.9, 0, 1.3), pinkTop: Q(0.5, 0, 1.3), pinkBottom: Q(0.5, 0, 1.3),
+    yellowTop: Q(0, 0, 1.3), yellowBottom: Q(0, 0, 1.3), mottle: Q(0.2, 0, 0.6), cell: Q(5.6, 2, 16, 0.1), angle: Q(15, 0, 90, 1), seed: Q(1, 0, 99, 1),
+  },
+  graph: {
+    let: { g: 'lin(@x,@y,0,$y,0,$y+$h)' },
+    nodes: {
+      box: { type: 'rect', params: { x: '$x', y: '$y', w: '$w', h: '$h' } },
+      fb: { type: 'field', params: { expr: 'clamp($blueTop + ($blueBottom-$blueTop)*lin(@x,@y,0,$y,0,$y+$h) + $mottle*(noise(@x,@y,90,$seed)-0.5))' } },
+      tb: { type: 'tint', in: { geo: 'box', field: 'fb' }, params: { ink: 'blue', cell: '$cell', angle: '$angle*PI/180' } },
+      fp: { type: 'field', params: { expr: 'clamp($pinkTop + ($pinkBottom-$pinkTop)*lin(@x,@y,0,$y,0,$y+$h) + $mottle*(noise(@x+300,@y+100,70,$seed+1)-0.5))' } },
+      tp: { type: 'tint', in: { geo: 'box', field: 'fp' }, params: { ink: 'pink', cell: '$cell', angle: '$angle*PI/180' } },
+      fy: { type: 'field', params: { expr: 'clamp($yellowTop + ($yellowBottom-$yellowTop)*lin(@x,@y,0,$y,0,$y+$h) + $mottle*(noise(@x+700,@y+500,80,$seed+2)-0.5))' } },
+      ty: { type: 'tint', in: { geo: 'box', field: 'fy' }, params: { ink: 'yellow', cell: '$cell*1.2', angle: '$angle*PI/180' } },
+      out: { type: 'merge', in: { list: ['tb', 'ty', 'tp'] } },
+    },
+    output: 'out',
+  },
+};
+
+// ---- burst: a firework. Rays with knobbed tips, a shorter inner crown, flecks, a hanging trail ----
+LIB.burst = {
+  label: 'Firework burst',
+  params: {
+    x: Q(300, 0, 1080, 1), y: Q(300, 0, 1080, 1), r: Q(130, 10, 400, 1), ink: { def: 'yellow', kind: 'ink' }, mode: { def: 'solid', kind: 'mode' },
+    rays: Q(70, 6, 200, 1), crown: Q(1, 0, 1, 0.01, 'inner crown density'), knob: Q(1, 0, 3, 0.05, 'tip size'), trail: Q(1, 0, 4, 0.05, 'trail length (× r)'),
+    grow: Q(1, 0, 1, 0.01, 'growth 0..1'),
+  },
+  xf: { x: '$x', y: '$y' },
+  graph: {
+    let: { R: '$r*(0.6+0.4*$grow)' },
+    nodes: {
+      rays: { type: 'copy', params: { n: '$rays' }, template: {
+        let: { a: '@i/@n*TAU + (rand(1)-0.5)*0.05', len: '$R*(0.72+0.28*rand(2))' },
+        nodes: {
+          ln: { type: 'line', params: { x0: 'cos($a)*$R*0.1', y0: 'sin($a)*$R*0.1', x1: 'cos($a)*$len', y1: 'sin($a)*$len', n: 6 } },
+          w: { type: 'wrangle', in: { geo: 'ln' }, params: { x: '@x + sin(@v*5+$a*3)*$R*0.01', w: '$R*0.022*(1-0.5*@v)' } },
+        }, output: 'w' } },
+      raysS: { type: 'stroke', in: { geo: 'rays' }, params: { ink: '$ink', mode: '$mode' } },
+      tips: { type: 'slice', in: { geo: 'rays' }, params: { start: 5 } },
+      tipsD: { type: 'dots', in: { geo: 'tips' }, params: { ink: '$ink', mode: '$mode', r: '$R*0.03*$knob*(0.7+0.6*rand(1))' } },
+      crown: { type: 'copy', params: { n: 'round($rays*1.4*$crown)' }, template: {
+        let: { a: '@i/@n*TAU + rand(1)*0.1', len: '$R*(0.3+0.2*rand(2))' },
+        nodes: { ln: { type: 'line', params: { x0: 'cos($a)*$R*0.06', y0: 'sin($a)*$R*0.06', x1: 'cos($a)*$len', y1: 'sin($a)*$len', n: 2 } },
+          w: { type: 'wrangle', in: { geo: 'ln' }, params: { w: '$R*0.014' } } }, output: 'w' } },
+      crownS: { type: 'stroke', in: { geo: 'crown' }, params: { ink: '$ink', mode: '$mode' } },
+      fleckPts: { type: 'scatter', params: { x: 0, y: 0, r: '$R*0.95', count: 'round($rays*0.8)' } },
+      flecks: { type: 'dots', in: { geo: 'fleckPts' }, params: { ink: '$ink', mode: '$mode', r: '$R*0.012*(0.5+rand(1))' } },
+      trailG: { type: 'line', params: { x0: 0, y0: '$R*0.15', x1: 0, y1: '$R*0.15 + $r*$trail', n: 30 } },
+      trailW: { type: 'wrangle', in: { geo: 'trailG' }, params: { x: '@x + sin(@v*4)*$r*0.05*@v', w: '2.2' } },
+      trailS: { type: 'stroke', in: { geo: 'trailW' }, params: { ink: '$ink', mode: '$mode' } },
+      trailEnd: { type: 'slice', in: { geo: 'trailW' }, params: { start: 29 } },
+      trailDot: { type: 'dots', in: { geo: 'trailEnd' }, params: { ink: 'all', mode: 'cut', r: 4 } },
+      out: { type: 'merge', in: { list: ['trailS', 'trailDot', 'crownS', 'raysS', 'tipsD', 'flecks'] } },
+    },
+    output: 'out',
+  },
+};
+
+// ---- ridge: a mountain layer. A noise-displaced line closed down to a base, filled with halftone or solid ink ----
+LIB.ridge = {
+  label: 'Mountain ridge',
+  params: {
+    x0: Q(-20, -200, 1080, 1), x1: Q(1100, 0, 1300, 1), y: Q(500, 0, 1080, 1, 'ridge base'), bottom: Q(1080, 0, 1200, 1),
+    amp: Q(120, 0, 500, 1, 'peak height'), scale: Q(220, 20, 800, 1, 'peak width'), seed: Q(1, 0, 99, 1), sharp: Q(1, 0, 1, 0.01, 'sharp peaks'),
+    blue: Q(0.5, 0, 1.3), pink: Q(0.5, 0, 1.3), fade: Q(0, 0, 1, 0.01, 'lighter towards the top'), cell: Q(5.6, 2, 16, 0.1),
+  },
+  graph: {
+    nodes: {
+      base: { type: 'line', params: { x0: '$x0', y0: '$y', x1: '$x1', y1: '$y', n: 120 } },
+      ridge: { type: 'wrangle', in: { geo: 'base' }, params: { y: '@y - $amp*(1 - $sharp*abs(2*noise(@x,0,$scale,$seed)-1) - (1-$sharp)*(1-noise(@x,0,$scale,$seed)))*(0.7+0.3*noise(@x,100,$scale*3,$seed+7))' } },
+      foot: { type: 'polygon', params: { pts: '$x1 $bottom $x0 $bottom', closed: 0 } },
+      shape: { type: 'join', in: { list: ['ridge', 'foot'] }, params: { close: 1 } },
+      fb: { type: 'field', params: { expr: 'clamp($blue*(1 - $fade*(1-lin(@x,@y,0,$y-$amp,0,$bottom))))' } },
+      tb: { type: 'tint', in: { geo: 'shape', field: 'fb' }, params: { ink: 'blue', cell: '$cell', angle: 0.26 } },
+      fp: { type: 'field', params: { expr: 'clamp($pink*(1 - $fade*(1-lin(@x,@y,0,$y-$amp,0,$bottom))))' } },
+      tp: { type: 'tint', in: { geo: 'shape', field: 'fp' }, params: { ink: 'pink', cell: '$cell', angle: 0.26 } },
+      cutY: { type: 'fill', in: { geo: 'shape' }, params: { ink: 'yellow', mode: 'cut' } },
+      out: { type: 'merge', in: { list: ['cutY', 'tb', 'tp'] } },
+    },
+    output: 'out',
+  },
+};
+LIB.ridge.graph.nodes.foot.params.pts = '$x1 $bottom $x0 $bottom';
+
+// ---- treeline: firs copied along a line, as solid dark ink or as a paper cut (fog) ----
+LIB.treeline = {
+  label: 'Treeline',
+  params: {
+    x0: Q(-20, -200, 1080, 1), x1: Q(1100, 0, 1300, 1), y: Q(700, 0, 1080, 1, 'ground'), bottom: Q(1080, 0, 1200, 1),
+    count: Q(40, 1, 300, 1), height: Q(90, 10, 400, 1), vary: Q(0.5, 0, 1, 0.01), seed: Q(1, 0, 99, 1),
+    mode: { def: 'add', kind: 'mode', label: 'add (dark) | cut (fog)' },
+  },
+  graph: {
+    nodes: {
+      trees: { type: 'copy', params: { n: '$count', x: '$x0 + (@i+0.5)/@n*($x1-$x0) + (rand(1)-0.5)*($x1-$x0)/@n', y: '$y + rand(3)*$height*0.15', scale: '$height/120*(1-$vary+$vary*rand(2))' }, template: {
+        nodes: { fir: { type: 'polygon', params: { pts: '0 -120 -13 -80 -6 -80 -19 -42 -9 -42 -25 0 25 0 9 -42 19 -42 6 -80 13 -80' } } }, output: 'fir' } },
+      ground: { type: 'polygon', params: { pts: '$x0 $y $x1 $y $x1 $bottom $x0 $bottom' } },
+      all: { type: 'merge', in: { list: ['trees', 'ground'] } },
+      fb: { type: 'fill', in: { geo: 'all' }, params: { ink: 'blue', mode: '$mode' } },
+      fp: { type: 'fill', in: { geo: 'all' }, params: { ink: 'pink', mode: '$mode' } },
+      fy: { type: 'fill', in: { geo: 'all' }, params: { ink: 'yellow', mode: 'cut' } },
+      out: { type: 'merge', in: { list: ['fy', 'fb', 'fp'] } },
+    },
+    output: 'out',
+  },
+};
+LIB.treeline.graph.nodes.ground.params.pts = '$x0 $y $x1 $y $x1 $bottom $x0 $bottom';
+
+// ---- flake: a snowflake. One arm with branches, copied around; optional blue halo under paper-white lines ----
+LIB.flake = {
+  label: 'Snowflake',
+  params: {
+    x: Q(540, 0, 1080, 1), y: Q(540, 0, 1080, 1), r: Q(200, 10, 600, 1), rot: Q(0, -3.2, 3.2, 0.01), arms: Q(6, 3, 12, 1),
+    branches: Q(3, 0, 6, 1), spread: Q(0.95, 0.3, 1.5, 0.01, 'branch angle (rad)'), width: Q(1, 0.2, 4, 0.05),
+    ink: { def: 'all', kind: 'ink' }, mode: { def: 'cut', kind: 'mode' }, tone: Q(1, 0, 1, 0.01), halo: Q(1, 0, 1, 1, 'blue halo'),
+    core: Q(1, 0, 1, 1, 'yellow hex core'),
+  },
+  xf: { x: '$x', y: '$y', rot: '$rot' },
+  graph: {
+    nodes: {
+      arm: { type: 'copy', params: { n: '$arms', rot: '@i/@n*TAU' }, template: {
+        nodes: {
+          main: { type: 'line', params: { x0: '$r*0.12', y0: 0, x1: '$r', y1: 0, n: 24 } },
+          mainW: { type: 'wrangle', in: { geo: 'main' }, params: { w: '$r*0.03*$width*(1-0.5*@v)' } },
+          bpts: { type: 'pointsAlong', in: { geo: 'main' }, params: { start: '6', step: 'round(17/$branches)', margin: 2 } },
+          br: { type: 'copy', in: { points: 'bpts' }, params: { orient: 0 }, template: {
+            nodes: {
+              up: { type: 'line', params: { x0: 0, y0: 0, x1: 'cos(-$spread)*$r*(0.32-0.2*@v)', y1: 'sin(-$spread)*$r*(0.32-0.2*@v)', n: 8 } },
+              dn: { type: 'line', params: { x0: 0, y0: 0, x1: 'cos($spread)*$r*(0.32-0.2*@v)', y1: 'sin($spread)*$r*(0.32-0.2*@v)', n: 8 } },
+              both: { type: 'merge', in: { list: ['up', 'dn'] } },
+              bw: { type: 'wrangle', in: { geo: 'both' }, params: { w: '$r*0.02*$width*(1-0.6*@v)' } },
+              twigs: { type: 'pointsAlong', in: { geo: 'both' }, params: { start: 3, step: 2, margin: 1 } },
+              twig: { type: 'copy', in: { points: 'twigs' }, params: { orient: 1 }, template: { nodes: {
+                a: { type: 'line', params: { x0: 0, y0: 0, x1: 'cos(-1.0)*$r*0.06', y1: 'sin(-1.0)*$r*0.06', n: 2 } },
+                b: { type: 'line', params: { x0: 0, y0: 0, x1: 'cos(1.0)*$r*0.06', y1: 'sin(1.0)*$r*0.06', n: 2 } },
+                ab: { type: 'merge', in: { list: ['a', 'b'] } },
+                abw: { type: 'wrangle', in: { geo: 'ab' }, params: { w: '$r*0.012*$width' } } }, output: 'abw' } },
+              all: { type: 'merge', in: { list: ['bw', 'twig'] } },
+            }, output: 'all' } },
+          armAll: { type: 'merge', in: { list: ['mainW', 'br'] } },
+        }, output: 'armAll' } },
+      haloS: { type: 'stroke', in: { geo: 'arm' }, params: { ink: 'blue', mode: 'add', w: 1 }, when: '$halo' },
+      haloW: { type: 'wrangle', in: { geo: 'arm' }, params: { w: '@pw + $r*0.014' } },
+      haloS2: { type: 'stroke', in: { geo: 'haloW' }, params: { ink: 'blue', mode: 'add' }, when: '$halo' },
+      armS: { type: 'stroke', in: { geo: 'arm' }, params: { ink: '$ink', mode: '$mode', tone: '$tone' } },
+      hex: { type: 'circle', params: { x: 0, y: 0, r: '$r*0.16', n: 6 } },
+      hexY: { type: 'fill', in: { geo: 'hex' }, params: { ink: 'yellow', mode: 'solid' }, when: '$core' },
+      hexB: { type: 'stroke', in: { geo: 'hex' }, params: { ink: 'blue', mode: 'add', w: '$r*0.012' }, when: '$core' },
+      hex2: { type: 'circle', params: { x: 0, y: 0, r: '$r*0.1', n: 6 } },
+      hex2B: { type: 'stroke', in: { geo: 'hex2' }, params: { ink: 'blue', mode: 'add', w: '$r*0.008' }, when: '$core' },
+      out: { type: 'merge', in: { list: ['haloS2', 'armS', 'hexY', 'hexB', 'hex2B'] } },
+    },
+    output: 'out',
+  },
+};
+
+// ---- web flake: concentric hexagons and spokes ----
+LIB.webflake = {
+  label: 'Web flake',
+  params: { x: Q(100, 0, 1080, 1), y: Q(180, 0, 1080, 1), r: Q(90, 10, 400, 1), rot: Q(0, -3.2, 3.2, 0.01), rings: Q(5, 1, 12, 1), spokes: Q(12, 3, 36, 1), width: Q(2.5, 0.5, 10, 0.1) },
+  xf: { x: '$x', y: '$y', rot: '$rot' },
+  graph: {
+    nodes: {
+      rings: { type: 'copy', params: { n: '$rings', scale: '(@i+1)/@n', rot: '@i*0.12' }, template: { nodes: { h: { type: 'circle', params: { x: 0, y: 0, r: '$r', n: 6 } } }, output: 'h' } },
+      spokes: { type: 'rays', params: { x: 0, y: 0, a0: 0, a1: '360-360/$spokes', count: '$spokes', r0: 0, r1: '$r' } },
+      all: { type: 'merge', in: { list: ['rings', 'spokes'] } },
+      halo: { type: 'stroke', in: { geo: 'all' }, params: { ink: 'blue', mode: 'add', w: '$width+2' } },
+      lines: { type: 'stroke', in: { geo: 'all' }, params: { ink: 'all', mode: 'cut', w: '$width' } },
+      out: { type: 'merge', in: { list: ['halo', 'lines'] } },
+    },
+    output: 'out',
+  },
+};
+
+// ---- the dot: the constant that every world contains ----
+LIB.dot = {
+  label: 'The dot',
+  params: { x: Q(540, 0, 1080, 1), y: Q(542, 0, 1080, 1), r: Q(17, 2, 60, 0.5) },
+  graph: {
+    nodes: {
+      c: { type: 'circle', params: { x: '$x', y: '$y', r: '$r' } },
+      b: { type: 'fill', in: { geo: 'c' }, params: { ink: 'blue', mode: 'solid' } },
+      c2: { type: 'circle', params: { x: '$x', y: '$y', r: '$r*0.7' } },
+      p: { type: 'fill', in: { geo: 'c2' }, params: { ink: 'pink', mode: 'add', tone: 0.85 } },
+      out: { type: 'merge', in: { list: ['b', 'p'] } },
+    },
+    output: 'out',
+  },
+};

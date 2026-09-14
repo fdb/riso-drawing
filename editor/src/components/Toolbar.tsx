@@ -35,7 +35,7 @@ export function Toolbar() {
     });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = `${doc.scene.name || "scene"}.riso.json`;
+    a.download = "riso-project.json";
     a.click();
     URL.revokeObjectURL(a.href);
   };
@@ -43,7 +43,7 @@ export function Toolbar() {
     if (!f) return;
     try {
       const d = JSON.parse(await f.text()) as Doc;
-      if (!d.scene || !d.lib) throw new Error("not a riso document");
+      if (!d.scenes || !d.lib) throw new Error("not a riso project");
       load(d);
     } catch (e) {
       alert((e as Error).message);

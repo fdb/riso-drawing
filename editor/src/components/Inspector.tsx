@@ -8,7 +8,14 @@ import {
   duplicateNode,
   disconnect,
 } from "../lib/graphOps";
-import { CAT, LIB, evalExpr, isSubnet, nodeLabel } from "../lib/engine";
+import {
+  CAT,
+  LIB,
+  evalExpr,
+  isSubnet,
+  nodeLabel,
+  bypassPortOf,
+} from "../lib/engine";
 import type {
   Doc,
   GraphDoc,
@@ -159,7 +166,10 @@ export function NodeEditor({
   root?: boolean;
 }) {
   const viewPath = useEditor((s) => s.graphPath);
-  const graphPath: GraphPathStep[] = root ? [{ kind: "scene" }] : viewPath;
+  const sceneName = useEditor((s) => s.sceneName);
+  const graphPath: GraphPathStep[] = root
+    ? [{ kind: "scene", name: sceneName }]
+    : viewPath;
   const commit = useEditor((s) => s.commit);
   const select = useEditor((s) => s.select);
   const dive = useEditor((s) => s.dive);
@@ -234,6 +244,20 @@ export function NodeEditor({
           />{" "}
           enabled
         </label>
+        {bypassPortOf(node.type) && (
+          <label className="chk">
+            <input
+              type="checkbox"
+              checked={!!node.bypass}
+              onChange={(e) =>
+                edit((n) => {
+                  n.bypass = e.target.checked || undefined;
+                })
+              }
+            />{" "}
+            bypass
+          </label>
+        )}
         {graph.output !== id && (
           <button
             onClick={() =>
@@ -459,63 +483,131 @@ function GraphEditor({ graph }: { graph: GraphDoc }) {
   const doc = useEditor((s) => s.doc);
   const graphPath = useEditor((s) => s.graphPath);
   const commit = useEditor((s) => s.commit);
+  const select = useEditor((s) => s.select);
   const onEdit = (fn: (g: GraphDoc) => void) =>
     commit((d) => {
       const g = resolveGraph(d, graphPath);
       if (g) fn(g);
     });
   const root = graphPath[0];
+  const sceneOf = (d: Doc) =>
+    root.kind === "scene" ? d.scenes[root.name] : undefined;
+  const scene = sceneOf(doc);
   const sceneDrag = useDragParam((d, v) => {
-    d.scene.seed = Math.round(v);
+    const sc = sceneOf(d);
+    if (sc) sc.seed = Math.round(v);
   }, "seed");
-  const trDrag = (k: "open" | "hold" | "close" | "gap") => {
+  const numDrag = (apply: (d: Doc, v: number) => void) => {
     const s = useEditor.getState;
     return (v: number, phase: "start" | "move" | "end") => {
-      const apply = (d: Doc) => {
-        d.scene.transition[k] = v;
-      };
       if (phase === "start") s().beginDrag();
       else if (phase === "move") {
-        if (s().dragBase) s().drag(apply);
-        else s().commit(apply);
+        if (s().dragBase) s().drag((d) => apply(d, v));
+        else s().commit((d) => apply(d, v));
       } else s().endDrag();
     };
   };
+  const printId = Object.keys(graph.nodes).find(
+    (k) => graph.nodes[k].type === "risoPrint",
+  );
   return (
     <div className="inspector">
-      {root.kind === "scene" && graphPath.length === 1 && (
+      {root.kind === "scene" && graphPath.length === 1 && scene && (
         <>
-          <h4>scene</h4>
+          <h4>
+            scene <span className="note">{scene.name}</span>
+          </h4>
+          <div className="row">
+            <label>about</label>
+            <input
+              className="text"
+              defaultValue={scene.about ?? ""}
+              onBlur={(e) =>
+                commit((d) => {
+                  const sc = sceneOf(d);
+                  if (sc) sc.about = e.target.value;
+                })
+              }
+            />
+          </div>
           <ParamRow
             label="seed"
-            value={doc.scene.seed}
+            value={scene.seed}
             schema={{ def: 5, min: 1, max: 99, step: 1 }}
             expr={false}
             onChange={(v) =>
               commit((d) => {
-                d.scene.seed = Number(v);
+                const sc = sceneOf(d);
+                if (sc) sc.seed = Number(v);
               })
             }
             onDrag={sceneDrag}
           />
-          <h4>
-            iris transition <span className="note">seconds</span>
-          </h4>
-          {(["open", "hold", "close", "gap"] as const).map((k) => (
-            <ParamRow
-              key={k}
-              label={k}
-              value={doc.scene.transition[k]}
-              schema={{ def: 0.2, min: 0, max: 2, step: 0.01 }}
-              expr={false}
-              onChange={(v) =>
+          <ParamRow
+            label="duration (s)"
+            value={scene.duration ?? 0}
+            schema={{ def: 0, min: 0, max: 30, step: 0.05 }}
+            expr={false}
+            onChange={(v) =>
+              commit((d) => {
+                const sc = sceneOf(d);
+                if (sc) sc.duration = Number(v) || undefined;
+              })
+            }
+            onDrag={numDrag((d, v) => {
+              const sc = sceneOf(d);
+              if (sc) sc.duration = v || undefined;
+            })}
+          />
+          <label className="chk">
+            <input
+              type="checkbox"
+              checked={!!scene.transition}
+              onChange={(e) =>
                 commit((d) => {
-                  d.scene.transition[k] = Number(v);
+                  const sc = sceneOf(d);
+                  if (sc)
+                    sc.transition = e.target.checked
+                      ? {
+                          type: "iris",
+                          open: 0.17,
+                          hold: 0.5,
+                          close: 0.17,
+                          gap: 0.3,
+                        }
+                      : null;
                 })
               }
-              onDrag={trDrag(k)}
-            />
-          ))}
+            />{" "}
+            iris transition when shown alone
+          </label>
+          {scene.transition &&
+            (["open", "hold", "close", "gap"] as const).map((k) => (
+              <ParamRow
+                key={k}
+                label={k + " (s)"}
+                value={scene.transition![k]}
+                schema={{ def: 0.2, min: 0, max: 2, step: 0.01 }}
+                expr={false}
+                onChange={(v) =>
+                  commit((d) => {
+                    const sc = sceneOf(d);
+                    if (sc?.transition) sc.transition[k] = Number(v);
+                  })
+                }
+                onDrag={numDrag((d, v) => {
+                  const sc = sceneOf(d);
+                  if (sc?.transition) sc.transition[k] = v;
+                })}
+              />
+            ))}
+          {printId && (
+            <div className="btns">
+              <button onClick={() => select({ kind: "node", id: printId })}>
+                print settings
+              </button>
+            </div>
+          )}
         </>
       )}
       {root.kind === "lib" && graphPath.length === 1 && (
@@ -567,6 +659,25 @@ function GraphEditor({ graph }: { graph: GraphDoc }) {
         </>
       )}
       <h4>graph</h4>
+      <div className="row">
+        <label>marks</label>
+        <select
+          value={graph.marks ?? ""}
+          onChange={(e) =>
+            onEdit((g) => {
+              g.marks = e.target.value || undefined;
+            })
+          }
+          title="the marks node other scenes embed with a shot"
+        >
+          <option value="">(none)</option>
+          {Object.keys(graph.nodes).map((id) => (
+            <option key={id} value={id}>
+              {id}
+            </option>
+          ))}
+        </select>
+      </div>
       <div className="row">
         <label>output</label>
         <select

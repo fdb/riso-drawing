@@ -9,6 +9,10 @@ export const SCENES = E.SCENES as unknown as Record<string, SceneDoc>;
 export const setLibrary = E.setLibrary as (
   lib: Record<string, SubnetDoc>,
 ) => void;
+export const bypassPort = E.bypassPort as (spec: NodeSpec) => string | null;
+/** the input a bypassed node passes through, or null when the node cannot be bypassed */
+export const bypassPortOf = (type: string): string | null =>
+  CAT[type] ? bypassPort(CAT[type]) : null;
 export const evalExpr = E.evalExpr as (v: unknown, ctx: unknown) => unknown;
 export const phaseName = E.phaseName as (
   t: number,
@@ -22,6 +26,7 @@ export interface RenderInfo {
 }
 export interface Runner {
   scene: SceneDoc;
+  scenes: Record<string, SceneDoc>;
   res: number;
   render(
     ctx: CanvasRenderingContext2D,
@@ -33,6 +38,7 @@ export interface Runner {
 export const SceneRunner = E.SceneRunner as unknown as new (
   res: number,
   scene: SceneDoc,
+  scenes: Record<string, SceneDoc>,
 ) => Runner;
 
 export const isSubnet = (type: string) => !!LIB[type];
