@@ -5,7 +5,7 @@
 <canvas id="c"></canvas>
 <script type="module">
 // Headless render page. ?scene=<name> ?f=<frame at 24 fps> ?s=<seed> ?res=<px> ?hold=1 (no iris)
-import { SceneRunner, setLibrary } from './engine/index.js';
+import { SceneRunner, setLibrary, createGpu, makeCanvas } from './engine/index.js';
 import { project } from './projects/film/index.js';
 const q = new URLSearchParams(location.search);
 setLibrary(project.functions);
@@ -14,8 +14,15 @@ const scene = scenes[q.get('scene') || 'jelly'];
 if (q.get('s')) scene.seed = +q.get('s');
 const res = +(q.get('res') || 1080), frame = +(q.get('f') || 10);
 const cv = document.getElementById('c'); cv.width = cv.height = res;
+document.title = 'RUNNING';
 try {
-  new SceneRunner(res, scene, scenes).render(cv.getContext('2d'), frame / 24, frame, { loopHold: q.has('hold') });
+  const gpu = q.has('gpu') ? await createGpu() : null;
+  if (q.has('gpu') && !gpu) throw new Error('WebGPU unavailable');
+  const runner = new SceneRunner(res, scene, scenes, gpu);
+  const t0 = performance.now();
+  if (gpu) runner.render({ gpuCtx: cv.getContext('webgpu'), scratch: makeCanvas(res, res).getContext('2d') }, frame / 24, frame, { loopHold: q.has('hold') });
+  else runner.render(cv.getContext('2d'), frame / 24, frame, { loopHold: q.has('hold') });
+  document.body.dataset.ms = (performance.now() - t0).toFixed(0);
   document.title = 'done';
 } catch (e) { document.title = 'ERROR ' + e.message; document.body.innerText = e.stack; }
 </script>

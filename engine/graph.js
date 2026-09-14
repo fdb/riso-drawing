@@ -469,8 +469,8 @@ function evalSubnet(lib, node, id, ctx, inputs) {
 
 // Evaluate a scene graph. Returns the output value; `probe` ({path, id}) captures one node's value on the way.
 // `cache` is a Map that survives across frames (stencils, static rasters); `node` evaluates a top-level node instead of the output.
-export function evalScene(scene, { t = 0, u = 0, iris = 1, f = 0, res = 1080, cache = new Map(), probe = null, node = null, scenes = null }) {
-  const ctx = { t, u, iris, f, res, seed: scene.seed, T: timeTracker(t, u, f, iris), V: {}, A: {}, path: '', memo: new Map(), dyn: false, cache, probe, scenes };
+export function evalScene(scene, { t = 0, u = 0, iris = 1, f = 0, res = 1080, cache = new Map(), probe = null, node = null, scenes = null, gpu = null }) {
+  const ctx = { t, u, iris, f, res, seed: scene.seed, T: timeTracker(t, u, f, iris), V: {}, A: {}, path: '', memo: new Map(), dyn: false, cache, probe, scenes, gpu };
   applyLet(scene.graph, ctx); ctx.dyn = ctx.T.used;
   return evalNode(scene.graph, node || scene.graph.output, ctx);
 }

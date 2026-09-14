@@ -23,16 +23,20 @@ export function phaseName(time, tr, loopHold) {
 
 export class SceneRunner {
   // scenes: registry used by `shot` nodes
-  constructor(res, scene, scenes = null) { this.res = res; this.scene = scene; this.scenes = scenes; this.cache = new Map(); }
+  // gpu: a device from createGpu(); when set, render() expects a WebGPU target
+  constructor(res, scene, scenes = null, gpu = null) { this.res = res; this.scene = scene; this.scenes = scenes; this.cache = new Map(); this.gpu = gpu; }
   // display: { path, id } shows that node's value instead of the graph output
-  render(ctx, time, frame, { loopHold = false, display = null } = {}) {
-    const sc = this.scene;
+  // target: a 2D context, or { gpuCtx, scratch } for a WebGPU canvas (scratch: a 2D context of the same size)
+  render(target, time, frame, { loopHold = false, display = null } = {}) {
+    const sc = this.scene, gpu = this.gpu;
+    if (gpu) gpu.beginFrame();
+    const T = gpu ? { gpu, gpuCtx: target.gpuCtx, scratch: target.scratch } : { ctx2d: target };
     const iris = irisScale(time, sc.transition, loopHold);
     const cyc = cycleLength(sc.transition), u = ((time % cyc) + cyc) % cyc;
     const probe = display ? { path: display.path, id: display.id, result: undefined } : null;
-    let value = evalScene(sc, { t: time, u, iris, f: frame, res: this.res, cache: this.cache, probe, scenes: this.scenes });
+    let value = evalScene(sc, { t: time, u, iris, f: frame, res: this.res, cache: this.cache, probe, scenes: this.scenes, gpu });
     if (probe) {
-      if (probe.result === undefined && display.path === '') value = evalScene(sc, { t: time, u, iris, f: frame, res: this.res, cache: this.cache, node: display.id, scenes: this.scenes });
+      if (probe.result === undefined && display.path === '') value = evalScene(sc, { t: time, u, iris, f: frame, res: this.res, cache: this.cache, node: display.id, scenes: this.scenes, gpu });
       else if (probe.result !== undefined) value = probe.result;
     }
     const kind = Array.isArray(value) ? 'marks' : value && value.kind ? value.kind : value && value.prims ? 'geo' : value && value.sample ? 'field' : 'none';
@@ -41,8 +45,9 @@ export class SceneRunner {
       local = value.dur > 0 ? ((time % value.dur) + value.dur) % value.dur : 0;
       value = value.at(local, frame);
     }
-    drawValue(ctx, value, this.res);
-    return { iris, kind, local, loop: this.loopLength() };
+    drawValue(T, value, this.res);
+    if (gpu) gpu.endFrame();
+    return { iris, kind, local, loop: this.loopLength(), gpu: !!gpu };
   }
   // the loop length of the scene: its duration, or the length of its marks clip
   loopLength() {

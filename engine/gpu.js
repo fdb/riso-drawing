@@ -9,21 +9,15 @@
 // was not marked with `gpu.keep(img)`. `gpu.release(img)` returns one image early. Images made
 // outside a frame stay allocated until released.
 
+import { mulberry32 } from './riso.js';
+
 const SLOT = 256;            // bytes per uniform slot (dynamic offset alignment)
 const SLOTS = 4096;
 const WG = 8;
 
-const seedRandom = seed => Math.round(seed) * 2654435761 >>> 0;   // as cops.js 'random'
-const seedNoise = seed => 1000 + Math.round(seed) * 7919;           // as cops.js 'noise'
-
-export function mulberry32(a) {
-  return function () {
-    a |= 0; a = a + 0x6D2B79F5 | 0;
-    let t = Math.imul(a ^ a >>> 15, 1 | a);
-    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
-    return ((t ^ t >>> 14) >>> 0) / 4294967296;
-  };
-}
+// noise() and random() take the node's seed parameter and derive the RNG seed as cops.js does
+const seedRandom = seed => Math.round(seed) * 2654435761 >>> 0;
+const seedNoise = seed => 1000 + Math.round(seed) * 7919;
 
 // ---------------- WGSL ----------------
 // Each kernel gets the same bindings: uniforms, the output texture, then its input textures.

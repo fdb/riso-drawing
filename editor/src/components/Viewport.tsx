@@ -6,9 +6,16 @@ import type { Doc } from "../lib/types";
 interface Done {
   type: "done";
   ms: number;
-  info: { iris: number; kind: string; local: number | null; loop: number };
+  info: {
+    iris: number;
+    kind: string;
+    local: number | null;
+    loop: number;
+    gpu: boolean;
+  };
 }
-type WorkerReply = Done | { type: "error"; message: string };
+type WorkerReply =
+  Done | { type: "error"; message: string } | { type: "notready" };
 
 const workers = new WeakMap<HTMLCanvasElement, { worker: Worker }>();
 
@@ -31,7 +38,14 @@ export function Viewport() {
         { type: "module" },
       );
       const offscreen = cv.transferControlToOffscreen();
-      worker.postMessage({ type: "init", canvas: offscreen }, [offscreen]);
+      worker.postMessage(
+        {
+          type: "init",
+          canvas: offscreen,
+          gpu: !new URLSearchParams(location.search).has("cpu"),
+        },
+        [offscreen],
+      );
       entry = { worker };
       workers.set(cv, entry);
     }
@@ -53,6 +67,10 @@ export function Viewport() {
       busy = false;
       const st = useEditor.getState();
       const { doc, ui, sceneName } = st;
+      if (e.data.type === "notready") {
+        dirty = true;
+        return;
+      }
       if (e.data.type === "error") {
         if (hudRef.current)
           hudRef.current.textContent = "ERROR " + e.data.message;
@@ -65,7 +83,7 @@ export function Viewport() {
       if (hudRef.current && scene)
         hudRef.current.textContent =
           `${sceneName}  t ${time.toFixed(2)}s  frame ${frame}  ${scene.transition ? phaseName(time, scene.transition, ui.loopHold) + "  iris " + info.iris.toFixed(2) : ""}\n` +
-          `${ms.toFixed(0)} ms  ~${fps.toFixed(0)} fps   showing ${ui.display ? `${ui.display.id} (${info.kind})` : "output"}${info.local !== null ? `  clip t ${info.local.toFixed(2)}s` : ""}${info.loop ? `  loop ${info.loop.toFixed(2)}s` : ""}`;
+          `${ms.toFixed(0)} ms  ~${fps.toFixed(0)} fps  ${info.gpu ? "gpu" : "cpu"}   showing ${ui.display ? `${ui.display.id} (${info.kind})` : "output"}${info.local !== null ? `  clip t ${info.local.toFixed(2)}s` : ""}${info.loop ? `  loop ${info.loop.toFixed(2)}s` : ""}`;
       frame++;
     };
 

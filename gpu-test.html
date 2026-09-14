@@ -28,9 +28,7 @@ function report(name, a, b, ch) {
   document.getElementById('t').appendChild(tr);
 }
 async function check(name, cpuImg, gpuImg) {
-  log(name + ' @' + performance.now().toFixed(0));
   const g = await gpu.readback(gpuImg);
-  log('  read @' + performance.now().toFixed(0));
   report(name, cpuImg.data, g, cpuImg.ch);
   gpu.release(gpuImg);
 }

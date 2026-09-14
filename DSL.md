@@ -48,14 +48,17 @@ In the editor a core function is read-only until edited; editing forks a copy in
 |---|---|
 | `engine/riso.js` | Core. Ink stencils: three grayscale canvases marks are painted onto. |
 | `engine/graph.js` | Core. Values, expressions, geometry and mark blocks, time blocks (`clip`, `sequence`), evaluator, mark painter. |
-| `engine/cops.js` | Core. Pixel blocks and previews. |
+| `engine/cops.js` | Core. Pixel blocks and previews; each block runs on the CPU or, given a device, on the GPU. |
+| `engine/gpu.js` | Core. The WebGPU backend: the same pixel kernels in WGSL, texture pool, presentation. |
 | `engine/functions.js` | Core graph functions: `hand`, `risoInk`, `risoPrint`. |
 | `engine/scene.js` | Core. Runtime: one frame of a scene, display of any node, loop length. |
 | `projects/film/world.js` | Functions of this film: `water`, `stars`, `bubble`, `jellyfish`, `sky`, `burst`, `ridge`, `treeline`, `flake`, `webflake`. |
 | `projects/film/scenes.js` | The scenes: `jelly`, `fireworks`, `mountains`, `snow`, `main`. |
 | `projects/film/index.js` | The project module: `{ functions, scenes }`. |
 | `editor/` | The node-based editor app (see `editor/README.md`). |
-| `render.html`, `render.sh`, `render-anim.sh` | Headless page and scripts: one frame of a named scene to PNG, or a sequence to mp4. |
+| `render.html`, `render.sh`, `render-anim.sh` | Headless page and scripts: one frame of a named scene to PNG, or a sequence to mp4. `?gpu=1` runs the pixel chain on the GPU. |
+| `scripts/run-headless.mjs` | Headless Chrome over the DevTools protocol, with WebGPU; `--shot` saves a PNG. |
+| `gpu-test.html` | Every GPU kernel against its CPU twin; title PASS or FAIL. |
 
 ## Values
 
@@ -271,3 +274,24 @@ catalog node or subnet, diving into subnets and copy templates with breadcrumbs,
 generated from the parameter schemas, a display flag on any node so the viewer shows that value,
 undo/redo for every change including slider drags, autosave, and JSON export/import. Next:
 canvas gizmos for positions and radii, a timeline strip for the shots, a world index.
+
+## Where the work runs
+
+The editor renders in a worker that owns the viewer canvas; the main thread keeps time, sends one
+frame at a time and shows the HUD, so editing never waits for a frame.
+
+Inside the worker, three stages:
+
+1. **Geometry** on the CPU: expressions per point and per copy. Small data, branchy code.
+2. **Rasterization** of marks into the three stencils by the 2D canvas, which the browser
+   accelerates on its own. With WebGPU the stencil canvases are copied straight into textures
+   (`fromCanvas`), so no pixels come back to the CPU.
+3. **Pixels** on the GPU when a device exists: every pixel block has a WGSL twin in `engine/gpu.js`
+   with the same numerics (the noise grid and the RNG sequence are identical, so seeds give the
+   same picture). Static rasters are kept as textures across frames; per-frame textures come from
+   a pool and are recycled at the end of the frame. The final image is presented on a WebGPU
+   canvas; values that are not images (marks, geometry, fields) are drawn on a scratch 2D canvas
+   and uploaded once. `pixel`, the expression block, stays on the CPU and reads GPU inputs as 0.
+
+Without WebGPU everything falls back to the CPU path; `?cpu` in the editor URL forces it. The
+next stage is rasterizing marks on the GPU too, which removes the canvas from the loop.

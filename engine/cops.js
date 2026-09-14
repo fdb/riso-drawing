@@ -10,14 +10,16 @@ import { Stencils, INKS, U, TAU, mulberry32, makeNoise, hexRgb, clamp01, makeCan
 // Static rasters (paper, screens, noise) are cached across frames by their signature.
 
 const img = (w, ch, data) => ({ w, ch, data: data || new Float32Array(w * w * ch), kind: 'image' });
-const same = (a) => img(a.w, a.ch, a.data);
+const same = (a) => (a.gpu ? { ...a } : img(a.w, a.ch, a.data));
 const flatMarks = v => (Array.isArray(v) && v.length && Array.isArray(v[0]) ? [].concat(...v) : v) || [];
 
-// reuse a raster while its signature holds
+// reuse a raster while its signature holds; on the GPU, kept textures survive the frame
 function cached(ctx, id, sig, make) {
   const key = ctx.path + '/' + id, hit = ctx.cache.get(key);
   if (hit && hit.sig === sig) return hit.value;
-  const value = make(); ctx.cache.set(key, { sig, value }); return value;
+  if (hit && hit.value && hit.value.gpu && ctx.gpu) ctx.gpu.release(hit.value);
+  const value = make(); if (value && value.gpu && ctx.gpu) ctx.gpu.keep(value);
+  ctx.cache.set(key, { sig, value }); return value;
 }
 const staticSig = (ctx, p) => ctx.res + JSON.stringify(p);
 // pixel nodes with static inputs are computed once
@@ -40,7 +42,7 @@ def('rasterize', { label: 'Rasterize marks', cat: 'cop', out: 'stencils', inputs
     else st.S.restoreAll();
     paintMarks(st.S, marks.slice(k));
     const out = { kind: 'stencils', dyn: marks.some(m => m.dyn) };
-    for (const ink of INKS) out[ink] = img(ctx.res, 1, st.S.read(ink));
+    for (const ink of INKS) out[ink] = ctx.gpu ? ctx.gpu.fromCanvas(st.S.S[ink].cv, ctx.res) : img(ctx.res, 1, st.S.read(ink));
     return out;
   } });
 def('stencil', { label: 'Pick stencil', cat: 'cop', out: 'image', inputs: ['stencils'], params: { ink: { def: 'blue', kind: 'ink' } },
@@ -59,6 +61,7 @@ def('paper', { label: 'Paper', cat: 'cop', out: 'image',
       g.stroke();
     }
     for (let k = 0; k < ns; k++) { g.fillStyle = `rgba(90,80,60,${0.03 + rng() * 0.05})`; g.beginPath(); g.arc(rng() * U, rng() * U, 0.6 + rng() * 1.8, 0, TAU); g.fill(); }
+    if (ctx.gpu) return ctx.gpu.fromCanvasRgb(cv, W);
     const d = g.getImageData(0, 0, W, W).data, out = img(W, 3);
     for (let k = 0; k < W * W; k++) { out.data[k * 3] = d[k * 4] / 255; out.data[k * 3 + 1] = d[k * 4 + 1] / 255; out.data[k * 3 + 2] = d[k * 4 + 2] / 255; }
     return out;
@@ -66,7 +69,9 @@ def('paper', { label: 'Paper', cat: 'cop', out: 'image',
 def('screen', { label: 'Halftone screen', cat: 'cop', out: 'image',
   params: { cell: C(5.6, 1, 30, 0.1, 'cell (scene px)'), angle: C(15, 0, 90, 1, 'angle (deg)') },
   fn: (i, p, ctx, node, id) => cached(ctx, id, staticSig(ctx, p), () => {
-    const W = ctx.res, cell = p.cell * W / U, a = p.angle * Math.PI / 180, c = Math.cos(a), sn = Math.sin(a), out = img(W, 1);
+    const W = ctx.res, cell = p.cell * W / U, a = p.angle * Math.PI / 180, c = Math.cos(a), sn = Math.sin(a);
+    if (ctx.gpu) return ctx.gpu.screen(W, cell, a);
+    const out = img(W, 1);
     for (let y = 0; y < W; y++) for (let x = 0; x < W; x++) {
       const xr = (x * c + y * sn) / cell, yr = (-x * sn + y * c) / cell;
       const u = xr - Math.floor(xr) - 0.5, v = yr - Math.floor(yr) - 0.5;
@@ -77,14 +82,18 @@ def('screen', { label: 'Halftone screen', cat: 'cop', out: 'image',
 def('noise', { label: 'Value noise', cat: 'cop', out: 'image',
   params: { scale: C(110, 4, 600, 1, 'scale (scene px)'), seed: C(7, 0, 999, 1) },
   fn: (i, p, ctx, node, id) => cached(ctx, id, staticSig(ctx, p), () => {
-    const W = ctx.res, sc = p.scale * W / U, nz = makeNoise(32, mulberry32(1000 + Math.round(p.seed) * 7919)), out = img(W, 1);
+    const W = ctx.res, sc = p.scale * W / U;
+    if (ctx.gpu) return ctx.gpu.noise(W, sc, p.seed);
+    const nz = makeNoise(32, mulberry32(1000 + Math.round(p.seed) * 7919)), out = img(W, 1);
     for (let y = 0; y < W; y++) for (let x = 0; x < W; x++) out.data[y * W + x] = nz(x / sc, y / sc);
     return out;
   }) });
 def('random', { label: 'White noise', cat: 'cop', out: 'image',
   params: { size: C(1, 1, 8, 1, 'grain size (px)'), seed: C(7, 0, 9999, 1) },
   fn: (i, p, ctx, node, id) => cached(ctx, id, staticSig(ctx, p), () => {
-    const W = ctx.res, s = Math.max(1, Math.round(p.size)), out = img(W, 1), rng = mulberry32(Math.round(p.seed) * 2654435761 >>> 0);
+    const W = ctx.res, s = Math.max(1, Math.round(p.size));
+    if (ctx.gpu) return ctx.gpu.random(W, s, p.seed);
+    const out = img(W, 1), rng = mulberry32(Math.round(p.seed) * 2654435761 >>> 0);
     if (s === 1) { for (let k = 0; k < W * W; k++) out.data[k] = rng(); return out; }
     const cells = Math.ceil(W / s), grid = new Float32Array(cells * cells);
     for (let k = 0; k < grid.length; k++) grid[k] = rng();
@@ -92,13 +101,14 @@ def('random', { label: 'White noise', cat: 'cop', out: 'image',
     return out;
   }) });
 def('constant', { label: 'Constant', cat: 'cop', out: 'image', params: { value: C(1, -2, 2, 0.01) },
-  fn: (i, p, ctx, node, id) => cached(ctx, id, staticSig(ctx, p), () => { const out = img(ctx.res, 1); out.data.fill(p.value); return out; }) });
+  fn: (i, p, ctx, node, id) => cached(ctx, id, staticSig(ctx, p), () => { if (ctx.gpu) return ctx.gpu.constant(ctx.res, p.value); const out = img(ctx.res, 1); out.data.fill(p.value); return out; }) });
 
 // ---- per-pixel operators ----
 def('shift', { label: 'Shift / rotate', cat: 'cop', out: 'image', inputs: ['image'],
   params: { x: C(0, -20, 20, 0.1, 'x (scene px)'), y: C(0, -20, 20, 0.1, 'y (scene px)'), rot: C(0, -0.05, 0.05, 0.0005, 'rotation (rad)') },
   fn: (i, p, ctx, node, id) => memoPixel(ctx, id, p, i, () => {
     const a = i.image, W = a.w, ch = a.ch, Z = W / U;
+    if (a.gpu) return ctx.gpu.shift(a, p.x * Z, p.y * Z, p.rot);
     if (!p.x && !p.y && !p.rot) return same(a);
     const out = img(W, ch), c = Math.cos(-p.rot), s = Math.sin(-p.rot), cx = W / 2, cy = W / 2, dx = p.x * Z, dy = p.y * Z, d = a.data, o = out.data;
     for (let y = 0; y < W; y++) {
@@ -115,9 +125,10 @@ def('shift', { label: 'Shift / rotate', cat: 'cop', out: 'image', inputs: ['imag
     return out;
   }) });
 def('remap', { label: 'Remap 0..1 → lo..hi', cat: 'cop', out: 'image', inputs: ['image'], params: { lo: C(0, -2, 2), hi: C(1, -2, 2) },
-  fn: (i, p, ctx, node, id) => memoPixel(ctx, id, p, i, () => { const a = i.image, out = img(a.w, a.ch); for (let k = 0; k < a.data.length; k++) out.data[k] = p.lo + a.data[k] * (p.hi - p.lo); return out; }) });
+  fn: (i, p, ctx, node, id) => memoPixel(ctx, id, p, i, () => { const a = i.image; if (a.gpu) return ctx.gpu.remap(a, p.lo, p.hi); const out = img(a.w, a.ch); for (let k = 0; k < a.data.length; k++) out.data[k] = p.lo + a.data[k] * (p.hi - p.lo); return out; }) });
 const OPS = { add: (a, b) => a + b, multiply: (a, b) => a * b, max: Math.max, min: Math.min };
-function nary(list, type) {
+function nary(list, type, gpu) {
+  if (gpu && list.some(v => v && v.gpu)) return gpu[type](list.filter(v => v && v.gpu));
   const L = list.filter(v => v && v.data); if (!L.length) return img(4, 1);
   const W = L[0].w, n = W * W;
   if (L.every(v => v.ch === 1)) {   // the common case: tight loops per operator
@@ -146,21 +157,24 @@ function nary(list, type) {
   return out;
 }
 for (const [type, label] of [['add', 'Add'], ['multiply', 'Multiply'], ['max', 'Max'], ['min', 'Min']])
-  def(type, { label, cat: 'cop', out: 'image', inputs: ['list'], params: {}, fn: (i, p, ctx, node, id) => memoPixel(ctx, id, p, i, () => nary(i.list, type)) });
+  def(type, { label, cat: 'cop', out: 'image', inputs: ['list'], params: {}, fn: (i, p, ctx, node, id) => memoPixel(ctx, id, p, i, () => nary(i.list, type, ctx.gpu)) });
 def('compare', { label: 'Compare a > b', cat: 'cop', out: 'image', inputs: ['a', 'b'], params: { softness: C(0.14, 0.001, 1, 0.001) },
   fn: (i, p, ctx, node, id) => memoPixel(ctx, id, p, i, () => {
-    const a = i.a, b = i.b, W = a.w, n = W * W, out = img(W, 1), o = out.data, inv = 1 / p.softness;
+    const a = i.a, b = i.b; if (a.gpu || b.gpu) return ctx.gpu.compare(a, b, p.softness);
+    const W = a.w, n = W * W, out = img(W, 1), o = out.data, inv = 1 / p.softness;
     const A = a.data, B = b.data, sa = a.ch, sb = b.ch;
     for (let k = 0; k < n; k++) { const v = (A[k * sa] - B[k * sb]) * inv + 0.5; o[k] = v < 0 ? 0 : v > 1 ? 1 : v; }
     return out; }) });
 def('ink', { label: 'Ink', cat: 'cop', out: 'image', inputs: ['image'], params: { color: { def: '#ff48b0', kind: 'color' } },
   fn: (i, p, ctx, node, id) => memoPixel(ctx, id, p, i, () => {
-    const a = i.image, [r, g, b] = hexRgb(p.color), out = img(a.w, 3), n = a.w * a.w;
+    const a = i.image, [r, g, b] = hexRgb(p.color); if (a.gpu) return ctx.gpu.ink(a, [r, g, b]);
+    const out = img(a.w, 3), n = a.w * a.w;
     for (let k = 0; k < n; k++) { const v = a.ch === 1 ? a.data[k] : a.data[k * 3]; out.data[k * 3] = 1 - v * (1 - r); out.data[k * 3 + 1] = 1 - v * (1 - g); out.data[k * 3 + 2] = 1 - v * (1 - b); }
     return out;
   }) });
 def('pixel', { label: 'Pixel expression', cat: 'cop', out: 'image', inputs: ['a', 'b'], params: { expr: { def: '@a', kind: 'expr', label: 'value at @x @y from @a @b' } },
   fn: (i, p, ctx, node, id) => memoPixel(ctx, id, p, i, () => {
+    // expressions run on the CPU; GPU inputs read as 0 (no readback inside a frame)
     const a = i.a && i.a.data ? i.a : null, b = i.b && i.b.data ? i.b : null, W = (a || b || { w: ctx.res }).w, out = img(W, 1);
     const f = compileExpr(node.params.expr !== undefined ? node.params.expr : '@a'), rand = k => hrand(ctx.seed, ctx.path + '/' + id, k), Z = U / W;
     const A = { ...ctx.A };
@@ -188,9 +202,24 @@ function drawStencils(ctx2d, st, res) {
   for (const ink of INKS) { const [r, g, b] = PROOF[ink], d = st[ink].data; for (let k = 0; k < res * res; k++) { const v = d[k] * 0.94; out.data[k * 3] *= 1 - v * (1 - r); out.data[k * 3 + 1] *= 1 - v * (1 - g); out.data[k * 3 + 2] *= 1 - v * (1 - b); } }
   drawImage(ctx2d, out);
 }
-export function drawValue(ctx2d, value, res) {
+// target: { ctx2d } for a 2D canvas, or { gpu, gpuCtx, scratch } for a WebGPU canvas. On a
+// WebGPU target everything is presented as a texture: GPU images directly, anything else via a
+// scratch 2D canvas uploaded once.
+export function drawValue(target, value, res) {
   const W = res;
   if (!value) return;
+  if (target.gpu) {
+    if (value.kind === 'image' && value.gpu && value.w === W) return target.gpu.present(value, target.gpuCtx);
+    if (value.kind === 'stencils' && value.blue && value.blue.gpu) {
+      const [rb, gb, bb] = PROOF.blue, [rp, gp, bp] = PROOF.pink, [ry, gy, by] = PROOF.yellow, g = target.gpu;
+      const paper = g.constant(W, 0.95);
+      return g.present(g.multiply([paper, g.ink(g.remap(value.blue, 0, 0.94), [rb, gb, bb]), g.ink(g.remap(value.pink, 0, 0.94), [rp, gp, bp]), g.ink(g.remap(value.yellow, 0, 0.94), [ry, gy, by])]), target.gpuCtx);
+    }
+    const sc = target.scratch;
+    if (value.kind === 'image' && value.w === W) drawImage(sc, value); else drawValue({ ctx2d: sc }, value, res);
+    return target.gpu.present(target.gpu.fromCanvasRgb(sc.canvas, W), target.gpuCtx);
+  }
+  const ctx2d = target.ctx2d;
   if (value.kind === 'image' && value.w === W) return drawImage(ctx2d, value);
   if (value.kind === 'stencils') return drawStencils(ctx2d, value, W);
   ctx2d.setTransform(1, 0, 0, 1, 0, 0); ctx2d.fillStyle = '#fff'; ctx2d.fillRect(0, 0, W, W);
