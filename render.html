@@ -5,7 +5,7 @@
 <canvas id="c"></canvas>
 <script type="module">
 // Headless render page. ?scene=<name> ?f=<frame at 24 fps> ?s=<seed> ?res=<px> ?hold=1 (no iris)
-import { SceneRunner, setLibrary, createGpu, makeCanvas } from './engine/index.js';
+import { SceneRunner, setLibrary, createGpu, attachRaster, makeCanvas } from './engine/index.js';
 import { project } from './projects/film/index.js';
 const q = new URLSearchParams(location.search);
 setLibrary(project.functions);
@@ -17,6 +17,7 @@ const cv = document.getElementById('c'); cv.width = cv.height = res;
 document.title = 'RUNNING';
 try {
   const gpu = q.has('gpu') ? await createGpu() : null;
+  if (gpu && !q.has('canvasraster')) attachRaster(gpu);
   if (q.has('gpu') && !gpu) throw new Error('WebGPU unavailable');
   const runner = new SceneRunner(res, scene, scenes, gpu);
   const t0 = performance.now();

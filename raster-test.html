@@ -1,0 +1,114 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>RUNNING</title>
+<style>
+  body { font: 13px/1.4 ui-monospace, monospace; margin: 16px; }
+  table { border-collapse: collapse; margin: 8px 0; } td, th { border: 1px solid #999; padding: 2px 8px; text-align: right; }
+  td:first-child, th:first-child { text-align: left; } .fail { background: #fcc; } .ok { background: #cfc; }
+  canvas { width: 270px; height: 270px; image-rendering: pixelated; margin: 2px; border: 1px solid #ccc; }
+  .row { display: flex; flex-wrap: wrap; align-items: flex-start; }
+</style>
+<h1 id="status">running…</h1>
+<pre id="log"></pre>
+<div id="out"></div>
+<script type="module">
+import { createGpu, Stencils, paintMarks, evalScene, setLibrary, INKS } from './engine/index.js';
+import { attachRaster } from './engine/gpu-raster.js';
+import { project } from './projects/film/index.js';
+
+const RES = 540, N = 20, MEAN_TOL = 0.02, FRAC_TOL = 0.01;
+const log = m => { document.getElementById('log').textContent += m + '\n'; };
+const out = document.getElementById('out');
+const h = (tag, html) => { const e = document.createElement(tag); e.innerHTML = html; out.appendChild(e); return e; };
+
+function stats(a, b) {
+  let sum = 0, bad = 0, max = 0;
+  for (let k = 0; k < a.length; k++) { const d = Math.abs(a[k] - b[k]); sum += d; if (d > 0.25) bad++; if (d > max) max = d; }
+  return { mean: sum / a.length, frac: bad / a.length, max };
+}
+function show(data, fn = v => v) {
+  const cv = document.createElement('canvas'); cv.width = cv.height = RES;
+  const im = new ImageData(RES, RES);
+  for (let k = 0; k < RES * RES; k++) { const v = Math.round(Math.max(0, Math.min(1, fn(data[k]))) * 255); im.data[k * 4] = im.data[k * 4 + 1] = im.data[k * 4 + 2] = v; im.data[k * 4 + 3] = 255; }
+  cv.getContext('2d').putImageData(im, 0, 0);
+  return cv;
+}
+const ms = v => v.toFixed(1) + ' ms';
+
+const failures = [];
+try {
+  setLibrary(project.functions);
+  const gpu = attachRaster(await createGpu());
+  if (!gpu) throw new Error('no WebGPU device');
+  gpu.device.addEventListener('uncapturederror', e => { log('GPU error: ' + e.error.message); failures.push('gpu error'); });
+
+  const names = (new URLSearchParams(location.search).get('scenes') || 'jelly,fireworks').split(',');
+  for (const name of names) {
+    const scene = project.scenes[name];
+    const marks = evalScene(scene, { res: RES, node: scene.graph.marks, scenes: project.scenes });
+    let k = 0; while (k < marks.length && !marks[k].dyn) k++;
+    const kinds = {}; for (const m of marks) kinds[m.kind] = (kinds[m.kind] || 0) + 1;
+    h('h2', `${name}: ${marks.length} marks, ${k} static (${Object.entries(kinds).map(([a, b]) => a + ' ' + b).join(', ')})`);
+
+    // CPU reference
+    const st = new Stencils(RES);
+    let t0 = performance.now(); paintMarks(st, marks); const cpuOnce = performance.now() - t0;
+    const cpu = {}; for (const ink of INKS) cpu[ink] = st.read(ink);
+
+    // GPU, one call without cache
+    gpu.beginFrame();
+    t0 = performance.now();
+    const img = gpu.rasterize(marks, RES, {});
+    const gpuEncode = performance.now() - t0;
+    const g1 = {}; for (const ink of INKS) g1[ink] = await gpu.readback(img[ink]);
+    gpu.endFrame();
+
+    // timing: GPU with the static-prefix cache
+    const state = { staticCount: k, staticKey: 'k' };
+    gpu.beginFrame(); gpu.rasterize(marks, RES, state); gpu.flush(); gpu.endFrame();   // builds the snapshot
+    await gpu.device.queue.onSubmittedWorkDone();
+    t0 = performance.now();
+    let last = null;
+    for (let i = 0; i < N; i++) { gpu.beginFrame(); last = gpu.rasterize(marks, RES, state); gpu.flush(); if (i < N - 1) gpu.endFrame(); }
+    const gpuEnc = performance.now() - t0;
+    await gpu.device.queue.onSubmittedWorkDone();
+    const gpuTotal = performance.now() - t0;
+    const g2 = {}; for (const ink of INKS) g2[ink] = await gpu.readback(last[ink]);
+    gpu.endFrame();
+
+    // timing: CPU full repaint and CPU with the snapshot cache (as cops.rasterize does)
+    t0 = performance.now();
+    for (let i = 0; i < N; i++) { st.clearAll(); paintMarks(st, marks); }
+    const cpuFull = performance.now() - t0;
+    st.clearAll(); paintMarks(st, marks.slice(0, k)); st.snapshotAll();
+    t0 = performance.now();
+    for (let i = 0; i < N; i++) { st.restoreAll(); paintMarks(st, marks.slice(k)); }
+    const cpuCached = performance.now() - t0;
+
+    let rows = '';
+    for (const [label, g] of [['no cache', g1], ['prefix cache', g2]]) for (const ink of INKS) {
+      const s = stats(cpu[ink], g[ink]), ok = s.mean < MEAN_TOL && s.frac < FRAC_TOL;
+      if (!ok) failures.push(`${name} ${ink} ${label} mean ${s.mean.toFixed(4)} frac ${s.frac.toFixed(4)}`);
+      rows += `<tr class="${ok ? 'ok' : 'fail'}"><td>${label} ${ink}</td><td>${s.mean.toFixed(5)}</td><td>${s.frac.toFixed(5)}</td><td>${s.max.toFixed(3)}</td></tr>`;
+    }
+    h('table', `<tr><th>stencil</th><th>mean |diff|</th><th>frac &gt; 0.25</th><th>max</th></tr>${rows}`);
+    h('table', `<tr><th>timing (${N} frames)</th><th>total</th><th>per frame</th></tr>
+      <tr><td>CPU paintMarks, full</td><td>${ms(cpuFull)}</td><td>${ms(cpuFull / N)}</td></tr>
+      <tr><td>CPU paintMarks, prefix cached</td><td>${ms(cpuCached)}</td><td>${ms(cpuCached / N)}</td></tr>
+      <tr><td>GPU rasterize, prefix cached (encode)</td><td>${ms(gpuEnc)}</td><td>${ms(gpuEnc / N)}</td></tr>
+      <tr><td>GPU rasterize, prefix cached (submitted + done)</td><td>${ms(gpuTotal)}</td><td>${ms(gpuTotal / N)}</td></tr>
+      <tr><td>single frame, no cache: CPU / GPU encode</td><td>${ms(cpuOnce)} / ${ms(gpuEncode)}</td><td></td></tr>`);
+    const row = h('div', ''); row.className = 'row';
+    for (const ink of INKS) {
+      const d = new Float32Array(RES * RES); for (let i = 0; i < d.length; i++) d[i] = Math.abs(cpu[ink][i] - g1[ink][i]) * 4;
+      const cell = document.createElement('div'); cell.innerHTML = `<div>${ink}: cpu · gpu · |diff|×4</div>`;
+      cell.appendChild(show(cpu[ink])); cell.appendChild(show(g1[ink])); cell.appendChild(show(d)); row.appendChild(cell);
+    }
+  }
+  document.title = failures.length ? 'FAIL ' + failures.join('; ') : 'PASS';
+} catch (e) {
+  document.title = 'FAIL ' + (e && e.message || e);
+  log(e && e.stack || String(e));
+}
+document.getElementById('status').textContent = document.title;
+</script>

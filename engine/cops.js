@@ -33,15 +33,23 @@ const C = (def, min, max, step = 0.01, label) => ({ def, min, max, step, label }
 // ---- sources ----
 def('rasterize', { label: 'Rasterize marks', cat: 'cop', out: 'stencils', inputs: ['marks'], params: {},
   fn(i, p, ctx, node, id) {
-    const key = ctx.path + '/' + id; let st = ctx.cache.get(key);
-    if (!st || st.res !== ctx.res) { st = { res: ctx.res, S: new Stencils(ctx.res), staticKey: null }; ctx.cache.set(key, st); }
+    const key = ctx.path + '/' + id;
     const marks = flatMarks(i.marks);
     let k = 0; while (k < marks.length && !marks[k].dyn) k++;
     const sig = JSON.stringify([ctx.res, marks.slice(0, k).map(m => m.sig)]);
+    const out = { kind: 'stencils', dyn: marks.some(m => m.dyn) };
+    if (ctx.gpu && ctx.gpu.rasterize) {   // marks become textures directly; the static prefix stays on the GPU
+      let st = ctx.cache.get(key); if (!st || st.gpuState === undefined) { st = { gpuState: {} }; ctx.cache.set(key, st); }
+      st.gpuState.staticCount = k; st.gpuState.staticKey = sig;
+      const r = ctx.gpu.rasterize(marks, ctx.res, st.gpuState);
+      for (const ink of INKS) out[ink] = r[ink];
+      return out;
+    }
+    let st = ctx.cache.get(key);
+    if (!st || st.res !== ctx.res) { st = { res: ctx.res, S: new Stencils(ctx.res), staticKey: null }; ctx.cache.set(key, st); }
     if (sig !== st.staticKey) { st.S.clearAll(); paintMarks(st.S, marks.slice(0, k)); st.S.snapshotAll(); st.staticKey = sig; }
     else st.S.restoreAll();
     paintMarks(st.S, marks.slice(k));
-    const out = { kind: 'stencils', dyn: marks.some(m => m.dyn) };
     for (const ink of INKS) out[ink] = ctx.gpu ? ctx.gpu.fromCanvas(st.S.S[ink].cv, ctx.res) : img(ctx.res, 1, st.S.read(ink));
     return out;
   } });
@@ -214,6 +222,10 @@ export function drawValue(target, value, res) {
       const [rb, gb, bb] = PROOF.blue, [rp, gp, bp] = PROOF.pink, [ry, gy, by] = PROOF.yellow, g = target.gpu;
       const paper = g.constant(W, 0.95);
       return g.present(g.multiply([paper, g.ink(g.remap(value.blue, 0, 0.94), [rb, gb, bb]), g.ink(g.remap(value.pink, 0, 0.94), [rp, gp, bp]), g.ink(g.remap(value.yellow, 0, 0.94), [ry, gy, by])]), target.gpuCtx);
+    }
+    if (Array.isArray(value) && target.gpu.rasterize) {
+      const st = target.gpu.rasterize(flatMarks(value), W, target.proofState || (target.proofState = {}));
+      return drawValue(target, { kind: 'stencils', ...st }, res);
     }
     const sc = target.scratch;
     if (value.kind === 'image' && value.w === W) drawImage(sc, value); else drawValue({ ctx2d: sc }, value, res);

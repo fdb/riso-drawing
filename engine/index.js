@@ -5,4 +5,5 @@ export * from './graph.js';
 export * from './cops.js';
 export * from './scene.js';
 export { createGpu } from './gpu.js';
+export { attachRaster } from './gpu-raster.js';
 export { CORE_FUNCTIONS } from './functions.js';

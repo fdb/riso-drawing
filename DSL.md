@@ -50,6 +50,7 @@ In the editor a core function is read-only until edited; editing forks a copy in
 | `engine/graph.js` | Core. Values, expressions, geometry and mark blocks, time blocks (`clip`, `sequence`), evaluator, mark painter. |
 | `engine/cops.js` | Core. Pixel blocks and previews; each block runs on the CPU or, given a device, on the GPU. |
 | `engine/gpu.js` | Core. The WebGPU backend: the same pixel kernels in WGSL, texture pool, presentation. |
+| `engine/gpu-raster.js` | Core. Marks to stencils on the GPU, with the static-prefix snapshot. |
 | `engine/functions.js` | Core graph functions: `hand`, `risoInk`, `risoPrint`. |
 | `engine/scene.js` | Core. Runtime: one frame of a scene, display of any node, loop length. |
 | `projects/film/world.js` | Functions of this film: `water`, `stars`, `bubble`, `jellyfish`, `sky`, `burst`, `ridge`, `treeline`, `flake`, `webflake`. |
@@ -58,7 +59,7 @@ In the editor a core function is read-only until edited; editing forks a copy in
 | `editor/` | The node-based editor app (see `editor/README.md`). |
 | `render.html`, `render.sh`, `render-anim.sh` | Headless page and scripts: one frame of a named scene to PNG, or a sequence to mp4. `?gpu=1` runs the pixel chain on the GPU. |
 | `scripts/run-headless.mjs` | Headless Chrome over the DevTools protocol, with WebGPU; `--shot` saves a PNG. |
-| `gpu-test.html` | Every GPU kernel against its CPU twin; title PASS or FAIL. |
+| `gpu-test.html`, `raster-test.html` | Every GPU kernel, and the rasterizer on two scenes, against the CPU; title PASS or FAIL. |
 
 ## Values
 
@@ -283,9 +284,13 @@ frame at a time and shows the HUD, so editing never waits for a frame.
 Inside the worker, three stages:
 
 1. **Geometry** on the CPU: expressions per point and per copy. Small data, branchy code.
-2. **Rasterization** of marks into the three stencils by the 2D canvas, which the browser
-   accelerates on its own. With WebGPU the stencil canvases are copied straight into textures
-   (`fromCanvas`), so no pixels come back to the CPU.
+2. **Rasterization** of marks into the three stencils on the GPU (`engine/gpu-raster.js`): fills
+   and strokes by the stencil-buffer nonzero rule, clips in a stencil bit, dots and tint grids as
+   instanced circles with analytic coverage that reproduces the canvas's own circle geometry,
+   16 samples per stencil pixel, blend states for add and cut. The static prefix of a scene's
+   marks stays as a snapshot on the GPU. Without a device the 2D canvas paints the stencils and
+   they are read back as before; with a device but the canvas rasterizer (`?canvasraster` on the
+   render page) the canvases are copied into textures without a readback.
 3. **Pixels** on the GPU when a device exists: every pixel block has a WGSL twin in `engine/gpu.js`
    with the same numerics (the noise grid and the RNG sequence are identical, so seeds give the
    same picture). Static rasters are kept as textures across frames; per-frame textures come from
@@ -293,5 +298,9 @@ Inside the worker, three stages:
    canvas; values that are not images (marks, geometry, fields) are drawn on a scratch 2D canvas
    and uploaded once. `pixel`, the expression block, stays on the CPU and reads GPU inputs as 0.
 
-Without WebGPU everything falls back to the CPU path; `?cpu` in the editor URL forces it. The
-next stage is rasterizing marks on the GPU too, which removes the canvas from the loop.
+Without WebGPU everything falls back to the CPU path; `?cpu` in the editor URL forces it.
+`gpu-test.html` and `raster-test.html` compare every GPU stage against its CPU twin.
+
+Measured in the editor at 540 px, per frame in the worker: jelly 63 → 9 ms, fireworks 102 → 28 ms,
+the composition 373 → 31 ms. What is left is geometry: expressions per point and the CPU side of
+tint dot placement and stroke outlines.

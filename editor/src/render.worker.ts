@@ -7,6 +7,7 @@ import {
   setLibrary,
   createGpu,
   makeCanvas,
+  attachRaster,
 } from "../../engine/index.js";
 import type { Doc, Display } from "./lib/types";
 
@@ -69,6 +70,7 @@ let targetRes = 0;
 async function init(m: { canvas: OffscreenCanvas; gpu: boolean }) {
   canvas = m.canvas;
   gpu = m.gpu ? await makeGpu() : null;
+  if (gpu) (attachRaster as unknown as (g: Gpu) => Gpu)(gpu);
   ready = true;
 }
 
