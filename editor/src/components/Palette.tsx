@@ -22,7 +22,11 @@ export function Palette() {
     for (const [type, spec] of Object.entries(CAT))
       out.push({ type, label: spec.label, group: spec.cat });
     for (const [type, lib] of Object.entries(LIB))
-      out.push({ type, label: lib.label, group: "subnet" });
+      out.push({
+        type,
+        label: lib.label,
+        group: lib.core ? "core function" : "project function",
+      });
     return out;
   }, [open]);
 
@@ -45,7 +49,7 @@ export function Palette() {
     const st = useEditor.getState();
     let nid = "";
     st.commit((d) => {
-      const g = resolveGraph(d, st.graphPath);
+      const g = resolveGraph(d, st.graphPath, true);
       if (g) nid = addNode(g, type, [Math.round(at[0]), Math.round(at[1])]);
     });
     setUi({ paletteOpen: false });
@@ -69,7 +73,15 @@ export function Palette() {
           }}
         />
         <div className="palette-list">
-          {["geo", "field", "mark", "util", "cop", "subnet"].map((g) => {
+          {[
+            "geo",
+            "field",
+            "mark",
+            "util",
+            "cop",
+            "core function",
+            "project function",
+          ].map((g) => {
             const rows = shown.filter((i) => i.group === g);
             if (!rows.length) return null;
             return (

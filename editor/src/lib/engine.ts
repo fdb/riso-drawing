@@ -4,11 +4,19 @@ import { project as P } from "../../../projects/film/index.js";
 import type { NodeSpec, SubnetDoc, SceneDoc, GraphPathStep } from "./types";
 
 export const CAT = E.CAT as Record<string, NodeSpec>;
-/** the project's functions made of nodes */
-export const LIB = P.functions as unknown as Record<string, SubnetDoc>;
 E.setLibrary(P.functions);
+/** every function made of nodes: the core's own, then the project's */
+export const LIB = E.LIB as Record<string, SubnetDoc>;
+/** the core's graph functions; editing one forks it into the project */
+export const CORE_FUNCTIONS = E.CORE_FUNCTIONS as Record<string, SubnetDoc>;
+export const isCoreFunction = (type: string) => !!CORE_FUNCTIONS[type];
 export const MULTI_INPUTS = E.MULTI_INPUTS as string[];
 export const SCENES = P.scenes as unknown as Record<string, SceneDoc>;
+/** the project's own functions (what the document stores) */
+export const PROJECT_FUNCTIONS = P.functions as unknown as Record<
+  string,
+  SubnetDoc
+>;
 export const setLibrary = E.setLibrary as (
   lib: Record<string, SubnetDoc>,
 ) => void;

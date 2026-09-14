@@ -62,7 +62,7 @@ export default function App() {
         if (!sel) return;
         e.preventDefault();
         st.commit((d) => {
-          const g = resolveGraph(d, st.graphPath);
+          const g = resolveGraph(d, st.graphPath, true);
           if (!g) return;
           if (sel.kind === "node") removeNode(g, sel.id);
           else disconnect(g, sel.to, sel.port, sel.from);
@@ -74,7 +74,7 @@ export default function App() {
         e.preventDefault();
         let nid: string | null = null;
         st.commit((d) => {
-          const g = resolveGraph(d, st.graphPath);
+          const g = resolveGraph(d, st.graphPath, true);
           if (g) nid = duplicateNode(g, sel.id);
         });
         if (nid) st.select({ kind: "node", id: nid });

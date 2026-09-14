@@ -189,7 +189,7 @@ export function NodeEditor({
   const schema = lib ? lib.params : (spec?.params ?? {});
   const edit = (fn: (n: NodeDoc, g: GraphDoc) => void) =>
     commit((d) => {
-      const g = resolveGraph(d, graphPath);
+      const g = resolveGraph(d, graphPath, true);
       if (g?.nodes[id]) fn(g.nodes[id], g);
     });
   const dragParam = (k: string) => {
@@ -197,7 +197,7 @@ export function NodeEditor({
     let dragging = false;
     return (v: number, phase: "start" | "move" | "end") => {
       const apply = (d: Doc) => {
-        const g = resolveGraph(d, graphPath);
+        const g = resolveGraph(d, graphPath, true);
         if (g?.nodes[id]) (g.nodes[id].params ??= {})[k] = v;
       };
       if (phase === "start") {
@@ -225,7 +225,7 @@ export function NodeEditor({
             if (idText && idText !== id) {
               let ok = false;
               commit((d) => {
-                const g = resolveGraph(d, graphPath);
+                const g = resolveGraph(d, graphPath, true);
                 if (g) ok = renameNode(g, id, idText);
               });
               if (ok) select({ kind: "node", id: idText.trim() });
@@ -295,7 +295,7 @@ export function NodeEditor({
           onClick={() => {
             let nid: string | null = null;
             commit((d) => {
-              const g = resolveGraph(d, graphPath);
+              const g = resolveGraph(d, graphPath, true);
               if (g) nid = duplicateNode(g, id);
             });
             if (nid) select({ kind: "node", id: nid });
@@ -307,7 +307,7 @@ export function NodeEditor({
           className="danger"
           onClick={() => {
             commit((d) => {
-              const g = resolveGraph(d, graphPath);
+              const g = resolveGraph(d, graphPath, true);
               if (g) removeNode(g, id);
             });
             select(null);
@@ -515,7 +515,7 @@ function GraphEditor({ graph }: { graph: GraphDoc }) {
   const select = useEditor((s) => s.select);
   const onEdit = (fn: (g: GraphDoc) => void) =>
     commit((d) => {
-      const g = resolveGraph(d, graphPath);
+      const g = resolveGraph(d, graphPath, true);
       if (g) fn(g);
     });
   const root = graphPath[0];

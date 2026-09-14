@@ -1,15 +1,27 @@
 // Pure operations on graph documents. They mutate the graph they are given; the store hands them
 // a fresh clone inside a history commit.
 import type { Doc, GraphDoc, GraphPathStep, NodeDoc } from "./types";
+import { CORE_FUNCTIONS } from "./engine";
 
 const MULTI = ["list", "marks"];
 
-export function resolveGraph(doc: Doc, path: GraphPathStep[]): GraphDoc | null {
+/**
+ * The graph a view path points at. Core functions resolve read-only unless `fork` is set, which
+ * copies the function into the project first so the edit is the project's.
+ */
+export function resolveGraph(
+  doc: Doc,
+  path: GraphPathStep[],
+  fork = false,
+): GraphDoc | null {
   let g: GraphDoc | undefined;
   for (const step of path) {
     if (step.kind === "scene") g = doc.scenes[step.name]?.graph;
-    else if (step.kind === "lib") g = doc.lib[step.type]?.graph;
-    else g = g?.nodes[step.node]?.template;
+    else if (step.kind === "lib") {
+      if (!doc.lib[step.type] && CORE_FUNCTIONS[step.type] && fork)
+        doc.lib[step.type] = structuredClone(CORE_FUNCTIONS[step.type]);
+      g = (doc.lib[step.type] ?? CORE_FUNCTIONS[step.type])?.graph;
+    } else g = g?.nodes[step.node]?.template;
     if (!g) return null;
   }
   return g ?? null;

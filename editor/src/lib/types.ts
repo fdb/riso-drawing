@@ -51,6 +51,8 @@ export interface ParamSchema {
 
 export interface SubnetDoc {
   label: string;
+  /** shipped with the core; a project copy overrides it */
+  core?: boolean;
   inputs?: string[];
   params: Record<string, ParamSchema>;
   xf?: Record<string, string>;

@@ -4,30 +4,6 @@
 const LIB = {};
 const Q = (def, min, max, step = 0.01, label) => ({ def, min, max, step, label });
 
-// ---- hand: a pencil, made of blocks. Resample, then move points along their normal by slow
-// noise plus fine jitter, vary the width like pressure, thin the ends, overshoot a little. ----
-LIB.hand = {
-  label: 'Hand-drawn',
-  inputs: ['geo'],
-  params: {
-    step: Q(6, 1, 40, 0.5, 'resample step (px)'), wobble: Q(2, 0, 30, 0.1, 'slow wobble (px)'), wave: Q(70, 5, 400, 1, 'wobble length (px)'),
-    jitter: Q(0.6, 0, 10, 0.1, 'fine jitter (px)'), press: Q(0.35, 0, 1, 0.01, 'width variation'), taper: Q(0.3, 0, 1, 0.01, 'thin ends'),
-    overshoot: Q(2, 0, 30, 0.5, 'overshoot at the ends (px)'), seed: Q(0, 0, 999, 1),
-  },
-  graph: {
-    nodes: {
-      src: { type: 'input', params: { name: 'geo' } },
-      even: { type: 'resample', in: { geo: 'src' }, params: { step: '$step' } },
-      pencil: { type: 'wrangle', in: { geo: 'even' }, params: {
-        x: '@x + @nx*((noise(@v*1000+$seed*37, $seed, $wave, 3)-0.5)*2*$wobble + (rand(@i+$seed*7)-0.5)*2*$jitter) + (@i==0 ? -@tx*$overshoot : @i==@n-1 ? @tx*$overshoot : 0)',
-        y: '@y + @ny*((noise(@v*1000+$seed*37, $seed, $wave, 3)-0.5)*2*$wobble + (rand(@i+$seed*7)-0.5)*2*$jitter) + (@i==0 ? -@ty*$overshoot : @i==@n-1 ? @ty*$overshoot : 0)',
-        w: 'max(0.3, (@pw > 0 ? @pw : 2) * (1 + (noise(@v*1700+$seed*37, $seed+50, $wave*0.6, 4)-0.5)*2*$press) * (1 - $taper*pow(max(0, 1-min(@v,1-@v)*6), 2)))',
-      } },
-    },
-    output: 'pencil',
-  },
-};
-
 // ---- water: three background tints on the shared dot grid ----
 LIB.water = {
   label: 'Water',
@@ -360,22 +336,6 @@ LIB.webflake = {
       halo: { type: 'stroke', in: { geo: 'all' }, params: { ink: 'blue', mode: 'add', w: '$width+2' } },
       lines: { type: 'stroke', in: { geo: 'all' }, params: { ink: 'all', mode: 'cut', w: '$width' } },
       out: { type: 'merge', in: { list: ['halo', 'lines'] } },
-    },
-    output: 'out',
-  },
-};
-
-// ---- the dot: the constant that every world contains ----
-LIB.dot = {
-  label: 'The dot',
-  params: { x: Q(540, 0, 1080, 1), y: Q(542, 0, 1080, 1), r: Q(17, 2, 60, 0.5) },
-  graph: {
-    nodes: {
-      c: { type: 'circle', params: { x: '$x', y: '$y', r: '$r' } },
-      b: { type: 'fill', in: { geo: 'c' }, params: { ink: 'blue', mode: 'solid' } },
-      c2: { type: 'circle', params: { x: '$x', y: '$y', r: '$r*0.7' } },
-      p: { type: 'fill', in: { geo: 'c2' }, params: { ink: 'pink', mode: 'add', tone: 0.85 } },
-      out: { type: 'merge', in: { list: ['b', 'p'] } },
     },
     output: 'out',
   },

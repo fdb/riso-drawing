@@ -1,4 +1,5 @@
 import { TAU, mulberry32, clamp01, dist, makeNoise } from './riso.js';
+import { CORE_FUNCTIONS } from './functions.js';
 
 // graph.js — the modeling layer. A scene is a graph of small nodes.
 //
@@ -347,7 +348,8 @@ def('clip', { label: 'Clip (scene)', cat: 'util', out: 'clip',
       const c2 = { ...base, T: timeTracker(t + p.offset, t, f, iris), memo: new Map() };
       applyLet(sc.graph, c2);
       const out = evalNode(sc.graph, sc.graph.marks || 'marks', c2);
-      const marks = resolveClips(Array.isArray(out) ? out : [], t, f).map(m => ({ ...m, dyn: true }));
+      // marks keep their own flags: the scene's static marks stay cacheable while this clip plays
+      const marks = resolveClips(Array.isArray(out) ? out : [], t, f);
       last = { t, f, marks };
       return marks;
     };
@@ -391,8 +393,9 @@ def('input', { label: 'Subnet input', cat: 'util', out: 'any', params: { name: {
   fn: (i, p, ctx) => (ctx.inputs && ctx.inputs[p.name] !== undefined ? ctx.inputs[p.name] : []) });
 
 // ---------------- evaluation ----------------
-export const LIB = {};   // subnets: { name: { label, params, xf, graph: { let, nodes, output } } }
-export function setLibrary(lib) { for (const k in LIB) delete LIB[k]; Object.assign(LIB, lib); }
+export const LIB = {};   // functions made of nodes: { name: { label, inputs, params, xf, graph: { let, nodes, output } } }
+// the registry: the core's own graph functions, then a project's
+export function setLibrary(lib) { for (const k in LIB) delete LIB[k]; Object.assign(LIB, CORE_FUNCTIONS, lib); }
 const EMPTY = { geo: EMPTY_GEO, marks: () => [], field: () => ({ sample: () => 0 }), any: () => [], clip: () => ({ kind: 'clip', dur: 0, at: () => [], dyn: true }), image: () => ({ kind: 'image', w: 4, ch: 1, data: new Float32Array(16) }), stencils: () => ({ kind: 'stencils', dyn: false }) };
 
 function applyLet(graph, ctx) { if (graph.let) for (const k in graph.let) ctx.V[k] = evalExpr(graph.let[k], ctx); }
@@ -506,3 +509,5 @@ export function paintMarks(riso, marks) {
     m.clip.forEach(() => riso.popXf());
   }
 }
+
+setLibrary({});

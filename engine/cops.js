@@ -1,5 +1,5 @@
 import { def, paintMarks, compileExpr, hrand } from './graph.js';
-import { Stencils, INKS, U, TAU, mulberry32, makeNoise, hexRgb, clamp01 } from './riso.js';
+import { Stencils, INKS, U, TAU, mulberry32, makeNoise, hexRgb, clamp01, makeCanvas } from './riso.js';
 
 // cops.js — the compositing layer. Pixel nodes on square rasters at the render resolution.
 //
@@ -48,7 +48,7 @@ def('stencil', { label: 'Pick stencil', cat: 'cop', out: 'image', inputs: ['sten
 def('paper', { label: 'Paper', cat: 'cop', out: 'image',
   params: { color: { def: '#f3efe6', kind: 'color' }, fibres: C(1, 0, 3, 0.1), seed: C(31, 0, 999, 1) },
   fn: (i, p, ctx, node, id) => cached(ctx, id, staticSig(ctx, p), () => {
-    const W = ctx.res, Z = W / U, cv = document.createElement('canvas'); cv.width = cv.height = W;
+    const W = ctx.res, Z = W / U, cv = makeCanvas(W, W);
     const g = cv.getContext('2d'); g.fillStyle = p.color; g.fillRect(0, 0, W, W); g.scale(Z, Z);
     const rng = mulberry32(p.seed), nf = Math.round(900 * p.fibres), ns = Math.round(500 * p.fibres);
     for (let k = 0; k < nf; k++) {

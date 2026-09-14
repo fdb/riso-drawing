@@ -1,0 +1,123 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>RUNNING</title>
+<style>
+  body { font: 13px/1.4 ui-monospace, monospace; margin: 16px; }
+  table { border-collapse: collapse; } td, th { border: 1px solid #999; padding: 2px 8px; text-align: right; }
+  td:first-child, th:first-child { text-align: left; } .fail { background: #fcc; } .ok { background: #cfc; }
+</style>
+<h1 id="status">running…</h1>
+<pre id="log"></pre>
+<table id="t"><tr><th>kernel</th><th>max |diff|</th><th>ch</th><th>cpu[0]</th><th>gpu[0]</th></tr></table>
+<script type="module">
+import { createGpu } from './engine/gpu.js';
+import { CAT, U, hexRgb } from './engine/index.js';
+
+const RES = 256, Z = RES / U, TOL = 0.02;
+const log = m => { document.getElementById('log').textContent += m + '\n'; };
+const ctx = { res: RES, path: '', cache: new Map(), seed: 1, A: {}, V: {} };
+let n = 0;
+const cpu = (type, inputs, params) => CAT[type].fn(inputs, { ...Object.fromEntries(Object.entries(CAT[type].params).map(([k, v]) => [k, v.def])), ...params }, ctx, { params }, 'n' + n++);
+
+const rows = [];
+function report(name, a, b, ch) {
+  let d = 0; if (a.length !== b.length) d = Infinity; else for (let k = 0; k < a.length; k++) { const e = Math.abs(a[k] - b[k]); if (!(e <= d)) d = isNaN(e) ? Infinity : e; }
+  rows.push({ name, d, ch, a0: a[0], b0: b[0] });
+  const tr = document.createElement('tr'); tr.className = d < TOL ? 'ok' : 'fail';
+  tr.innerHTML = `<td>${name}</td><td>${d.toExponential(3)}</td><td>${ch}</td><td>${(+a[0]).toFixed(5)}</td><td>${(+b[0]).toFixed(5)}</td>`;
+  document.getElementById('t').appendChild(tr);
+}
+async function check(name, cpuImg, gpuImg) {
+  log(name + ' @' + performance.now().toFixed(0));
+  const g = await gpu.readback(gpuImg);
+  log('  read @' + performance.now().toFixed(0));
+  report(name, cpuImg.data, g, cpuImg.ch);
+  gpu.release(gpuImg);
+}
+
+let gpu;
+try {
+  log('requesting device…');
+  gpu = await createGpu();
+  log('device ok');
+  if (!gpu) throw new Error('createGpu() returned null: navigator.gpu=' + !!navigator.gpu + (navigator.gpu ? ', adapter=' + !!(await navigator.gpu.requestAdapter()) : ''));
+  gpu.device.addEventListener('uncapturederror', e => log('GPU error: ' + e.error.message));
+
+  // sources
+  const cScreen = cpu('screen', {}, { cell: 5.6, angle: 15 });
+  await check('screen', cScreen, gpu.screen(RES, 5.6 * Z, 15 * Math.PI / 180));
+  const cNoise = cpu('noise', {}, { scale: 110, seed: 7 });
+  await check('noise', cNoise, gpu.noise(RES, 110 * Z, 7));
+  const cNoise2 = cpu('noise', {}, { scale: 23, seed: 42 });
+  await check('noise scale 23 seed 42', cNoise2, gpu.noise(RES, 23 * Z, 42));
+  const cRand1 = cpu('random', {}, { size: 1, seed: 7 });
+  await check('random size 1', cRand1, gpu.random(RES, 1, 7));
+  const cRand3 = cpu('random', {}, { size: 3, seed: 123 });
+  await check('random size 3', cRand3, gpu.random(RES, 3, 123));
+  const cConst = cpu('constant', {}, { value: 0.37 });
+  await check('constant', cConst, gpu.constant(RES, 0.37));
+
+  // inputs shared by the operators: the CPU rasters uploaded, so each kernel is tested in isolation
+  const cInk3 = cpu('ink', { image: cNoise }, { color: '#ff48b0' });   // a 3-channel image
+  const gScreen = gpu.keep(gpu.upload(cScreen)), gNoise = gpu.keep(gpu.upload(cNoise)), gRand = gpu.keep(gpu.upload(cRand1)), gInk3 = gpu.keep(gpu.upload(cInk3));
+  report('upload 1ch', cNoise.data, await gpu.readback(gNoise), 1);
+  report('upload 3ch', cInk3.data, await gpu.readback(gInk3), 3);
+
+  // operators
+  const cShift0 = cpu('shift', { image: cNoise }, { x: 0, y: 0, rot: 0 });
+  const gShift0 = gpu.shift(gNoise, 0, 0, 0);
+  report('shift identity', cShift0.data, await gpu.readback(gShift0), 1);
+  const cShift = cpu('shift', { image: cNoise }, { x: 3 / Z, y: -2 / Z, rot: 0.002 });
+  await check('shift dx=3 dy=-2 rot=0.002', cShift, gpu.shift(gNoise, 3, -2, 0.002));
+  const cShift3 = cpu('shift', { image: cInk3 }, { x: 3 / Z, y: -2 / Z, rot: 0.002 });
+  await check('shift 3ch', cShift3, gpu.shift(gInk3, 3, -2, 0.002));
+  const cRemap = cpu('remap', { image: cNoise }, { lo: -0.5, hi: 1.5 });
+  await check('remap', cRemap, gpu.remap(gNoise, -0.5, 1.5));
+  await check('add', cpu('add', { list: [cNoise, cScreen, cRand1] }, {}), gpu.add([gNoise, gScreen, gRand]));
+  await check('add mixed', cpu('add', { list: [cNoise, cInk3] }, {}), gpu.add([gNoise, gInk3]));
+  await check('multiply', cpu('multiply', { list: [cNoise, cScreen] }, {}), gpu.multiply([gNoise, gScreen]));
+  await check('multiply mixed', cpu('multiply', { list: [cInk3, cNoise, cRand1] }, {}), gpu.multiply([gInk3, gNoise, gRand]));
+  await check('max', cpu('max', { list: [cNoise, cScreen, cRand1] }, {}), gpu.max([gNoise, gScreen, gRand]));
+  await check('max mixed', cpu('max', { list: [cNoise, cInk3] }, {}), gpu.max([gNoise, gInk3]));
+  await check('min', cpu('min', { list: [cNoise, cScreen] }, {}), gpu.min([gNoise, gScreen]));
+  await check('min mixed', cpu('min', { list: [cInk3, cScreen] }, {}), gpu.min([gInk3, gScreen]));
+  await check('compare', cpu('compare', { a: cNoise, b: cScreen }, { softness: 0.14 }), gpu.compare(gNoise, gScreen, 0.14));
+  await check('compare 3ch a', cpu('compare', { a: cInk3, b: cRand1 }, { softness: 0.3 }), gpu.compare(gInk3, gRand, 0.3));
+  await check('ink', cInk3, gpu.ink(gNoise, hexRgb('#ff48b0')));
+  await check('ink 3ch in', cpu('ink', { image: cInk3 }, { color: '#0078bf' }), gpu.ink(gInk3, hexRgb('#0078bf')));
+
+  // fromCanvas: a few shapes; the CPU side reads the red channel back like Stencils.read
+  const cv = document.createElement('canvas'); cv.width = cv.height = RES;
+  const g2 = cv.getContext('2d'); g2.fillStyle = '#000'; g2.fillRect(0, 0, RES, RES);
+  g2.fillStyle = '#fff'; g2.beginPath(); g2.arc(100, 90, 60, 0, Math.PI * 2); g2.fill();
+  g2.fillStyle = 'rgb(128,0,200)'; g2.fillRect(150, 150, 80, 60);
+  g2.strokeStyle = 'rgb(200,50,50)'; g2.lineWidth = 7; g2.beginPath(); g2.moveTo(10, 240); g2.lineTo(240, 20); g2.stroke();
+  const d = g2.getImageData(0, 0, RES, RES).data;
+  const cCov = { w: RES, ch: 1, data: new Float32Array(RES * RES) }, cRgb = { w: RES, ch: 3, data: new Float32Array(RES * RES * 3) };
+  for (let k = 0; k < RES * RES; k++) { cCov.data[k] = d[k * 4] / 255; cRgb.data[k * 3] = d[k * 4] / 255; cRgb.data[k * 3 + 1] = d[k * 4 + 1] / 255; cRgb.data[k * 3 + 2] = d[k * 4 + 2] / 255; }
+  await check('fromCanvas', cCov, gpu.fromCanvas(cv, RES));
+  await check('fromCanvasRgb', cRgb, gpu.fromCanvasRgb(cv, RES));
+
+  // present: draw the ink image and check the canvas pixels via an ImageBitmap round trip
+  const bmp = await gpu.toImageBitmap(gInk3);
+  const pc = document.createElement('canvas'); pc.width = pc.height = RES; const pg = pc.getContext('2d'); pg.drawImage(bmp, 0, 0);
+  const pd = pg.getImageData(0, 0, RES, RES).data, pOut = new Float32Array(RES * RES * 3);
+  for (let k = 0; k < RES * RES; k++) { pOut[k * 3] = pd[k * 4] / 255; pOut[k * 3 + 1] = pd[k * 4 + 1] / 255; pOut[k * 3 + 2] = pd[k * 4 + 2] / 255; }
+  report('present 3ch (8-bit)', cInk3.data, pOut, 3);
+  const bmp1 = await gpu.toImageBitmap(gNoise); pg.drawImage(bmp1, 0, 0);
+  const pd1 = pg.getImageData(0, 0, RES, RES).data, p1 = new Float32Array(RES * RES);
+  for (let k = 0; k < RES * RES; k++) p1[k] = 1 - pd1[k * 4] / 255;
+  report('present 1ch (8-bit)', cNoise.data, p1, 1);
+  const shown = document.createElement('canvas'); shown.width = shown.height = RES; document.body.appendChild(shown);
+  gpu.present(gInk3, shown.getContext('webgpu'));
+
+  gpu.endFrame();
+  const failed = rows.filter(r => !(r.d < TOL));
+  document.title = failed.length ? 'FAIL ' + failed.map(r => r.name).join(', ') : 'PASS';
+  document.getElementById('status').textContent = document.title;
+} catch (e) {
+  document.title = 'FAIL ' + (e && e.message || e);
+  document.getElementById('status').textContent = document.title;
+  log(e && e.stack || String(e));
+}
+</script>

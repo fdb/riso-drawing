@@ -198,7 +198,7 @@ export function GraphView() {
       const d = drag,
         snapshot = pos;
       commit((doc) => {
-        const g = resolveGraph(doc, graphPath);
+        const g = resolveGraph(doc, graphPath, true);
         if (!g?.nodes[d.id]) return;
         // pin every auto-placed node so the rest of the layout does not shift
         for (const id of Object.keys(g.nodes))
@@ -216,7 +216,7 @@ export function GraphView() {
         const w = wire,
           hp = hoverPort;
         commit((doc) => {
-          const g = resolveGraph(doc, graphPath);
+          const g = resolveGraph(doc, graphPath, true);
           if (g) connect(g, w.from, hp.id, hp.port);
         });
       }
@@ -250,7 +250,7 @@ export function GraphView() {
     setUi({ paletteOpen: true, paletteAt: lastMouse.current });
   const autoLayout = () =>
     commit((doc) => {
-      const g = resolveGraph(doc, graphPath);
+      const g = resolveGraph(doc, graphPath, true);
       if (g) for (const n of Object.values(g.nodes)) delete n.pos;
     });
 
@@ -261,7 +261,7 @@ export function GraphView() {
     setUi({ display: isDisplayed(id) ? null : { path: viewPath, id } });
   const toggleBypass = (id: string) =>
     commit((doc) => {
-      const g = resolveGraph(doc, graphPath);
+      const g = resolveGraph(doc, graphPath, true);
       if (g?.nodes[id])
         g.nodes[id].bypass = g.nodes[id].bypass ? undefined : true;
     });

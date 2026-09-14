@@ -37,12 +37,17 @@ export function makeNoise(n, rng) {
   };
 }
 
+// a 2D canvas on the main thread or in a worker
+export function makeCanvas(w, h) {
+  if (typeof document !== 'undefined') { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
+  return new OffscreenCanvas(w, h);
+}
+
 // One ink separation: a grayscale canvas, white = full ink, black = bare paper.
 export class Sep {
   constructor(name, res) {
     this.name = name; this.res = res; this.Z = res / U;
-    this.cv = document.createElement('canvas');
-    this.cv.width = res; this.cv.height = res;
+    this.cv = makeCanvas(res, res);
     this.g = this.cv.getContext('2d', { willReadFrequently: true });
     this.cache = null;
     this.clear();
@@ -54,7 +59,7 @@ export class Sep {
     g.fillStyle = '#000'; g.fillRect(0, 0, this.res, this.res); this.base();
   }
   snapshot() {
-    if (!this.cache) { this.cache = document.createElement('canvas'); this.cache.width = this.cache.height = this.res; }
+    if (!this.cache) this.cache = makeCanvas(this.res, this.res);
     const c = this.cache.getContext('2d'); c.drawImage(this.cv, 0, 0);
   }
   restore() {
@@ -76,23 +81,34 @@ export class Sep {
     const g = this.g; g.save(); g.beginPath(); g.rect(-2, -2, U + 4, U + 4); path(g);
     g.fillStyle = '#000'; g.fill('evenodd'); g.restore();
   }
-  // pw: optional per-point widths (variable-width stroke)
+  // pw: optional per-point widths. A variable-width line is one filled outline: the left offsets,
+  // then the right offsets back, with round caps. One draw call per polyline.
   line(pts, { w = 4, pw = null, tone = 1, cut = false } = {}) {
     const g = this.g; g.save();
     g.globalCompositeOperation = cut ? 'source-over' : 'screen';
-    g.strokeStyle = cut ? '#000' : this.gray(tone);
-    g.lineCap = 'round'; g.lineJoin = 'round';
+    const col = cut ? '#000' : this.gray(tone);
     if (!pw) {
-      g.lineWidth = w; g.beginPath();
+      g.strokeStyle = col; g.lineWidth = w; g.lineCap = 'round'; g.lineJoin = 'round'; g.beginPath();
       pts.forEach((p, i) => i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1]));
-      g.stroke();
-    } else {
-      for (let i = 0; i < pts.length - 1; i++) {
-        g.lineWidth = Math.max(0.6, (pw[i] + pw[i + 1]) / 2);
-        g.beginPath(); g.moveTo(pts[i][0], pts[i][1]); g.lineTo(pts[i + 1][0], pts[i + 1][1]); g.stroke();
-      }
+      g.stroke(); g.restore(); return;
     }
-    g.restore();
+    const n = pts.length; if (n < 2) { g.restore(); return; }
+    const L = [], R = [];
+    for (let i = 0; i < n; i++) {
+      const p0 = pts[Math.max(0, i - 1)], p1 = pts[Math.min(n - 1, i + 1)];
+      let dx = p1[0] - p0[0], dy = p1[1] - p0[1]; const l = Math.hypot(dx, dy) || 1; dx /= l; dy /= l;
+      const h = Math.max(0.3, pw[i]) / 2;
+      L.push([pts[i][0] - dy * h, pts[i][1] + dx * h]); R.push([pts[i][0] + dy * h, pts[i][1] - dx * h]);
+    }
+    g.fillStyle = col; g.beginPath();
+    g.moveTo(L[0][0], L[0][1]);
+    for (let i = 1; i < n; i++) g.lineTo(L[i][0], L[i][1]);
+    const e = pts[n - 1], a = pts[n - 2], ae = Math.atan2(e[1] - a[1], e[0] - a[0]);
+    g.arc(e[0], e[1], Math.max(0.3, pw[n - 1]) / 2, ae - Math.PI / 2, ae + Math.PI / 2);
+    for (let i = n - 1; i >= 0; i--) g.lineTo(R[i][0], R[i][1]);
+    const s0 = pts[0], s1 = pts[1], as = Math.atan2(s1[1] - s0[1], s1[0] - s0[0]);
+    g.arc(s0[0], s0[1], Math.max(0.3, pw[0]) / 2, as + Math.PI / 2, as + 3 * Math.PI / 2);
+    g.closePath(); g.fill(); g.restore();
   }
   // soft radial blob; the composite halftones it per pixel
   glow(x, y, r, tone = 1, inner = 0) {

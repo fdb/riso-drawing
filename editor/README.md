@@ -25,7 +25,8 @@ right.
   graph in the network.
 - **Toolbar**: undo / redo, play / pause / step / rewind, hold-only loop, speed, render size, the
   displayed node, export / import JSON, reset, theme.
-- **Viewer**: the open scene, re-rendered every frame while playing. Compositions loop over their duration. Paused frames re-render on
+- **Viewer**: the open scene, rendered in a worker that owns the canvas, so editing never waits
+  for a frame. One frame is in flight at a time. Compositions loop over their sequence's length. Paused frames re-render on
   any document change. The HUD shows time, phase, iris, frame cost, mark count and cache hits.
 - **Parameters**: the selected node (id, enabled, `when`, parameters with ƒ expression toggles,
   attributes, wired inputs) or, with nothing selected, the scene (about, seed, duration, iris

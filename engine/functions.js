@@ -1,8 +1,32 @@
-// print.js — the Riso print, as functions made of pixel blocks: one ink pass, and paper under
-// three of them. Any project that wants this look imports it.
+// functions.js — graph functions that ship with the core: nodes made of other nodes, available
+// to every project. Pure data, same shape as a project's functions.
 
 const LIB = {};
 const Q = (def, min, max, step = 0.01, label) => ({ def, min, max, step, label });
+
+// ---- hand: a pencil, made of blocks. Resample, then move points along their normal by slow
+// noise plus fine jitter, vary the width like pressure, thin the ends, overshoot a little. ----
+LIB.hand = {
+  label: 'Hand-drawn',
+  inputs: ['geo'],
+  params: {
+    step: Q(6, 1, 40, 0.5, 'resample step (px)'), wobble: Q(2, 0, 30, 0.1, 'slow wobble (px)'), wave: Q(70, 5, 400, 1, 'wobble length (px)'),
+    jitter: Q(0.6, 0, 10, 0.1, 'fine jitter (px)'), press: Q(0.35, 0, 1, 0.01, 'width variation'), taper: Q(0.3, 0, 1, 0.01, 'thin ends'),
+    overshoot: Q(2, 0, 30, 0.5, 'overshoot at the ends (px)'), seed: Q(0, 0, 999, 1),
+  },
+  graph: {
+    nodes: {
+      src: { type: 'input', params: { name: 'geo' } },
+      even: { type: 'resample', in: { geo: 'src' }, params: { step: '$step' } },
+      pencil: { type: 'wrangle', in: { geo: 'even' }, params: {
+        x: '@x + @nx*((noise(@v*1000+$seed*37, $seed, $wave, 3)-0.5)*2*$wobble + (rand(@i+$seed*7)-0.5)*2*$jitter) + (@i==0 ? -@tx*$overshoot : @i==@n-1 ? @tx*$overshoot : 0)',
+        y: '@y + @ny*((noise(@v*1000+$seed*37, $seed, $wave, 3)-0.5)*2*$wobble + (rand(@i+$seed*7)-0.5)*2*$jitter) + (@i==0 ? -@ty*$overshoot : @i==@n-1 ? @ty*$overshoot : 0)',
+        w: 'max(0.3, (@pw > 0 ? @pw : 2) * (1 + (noise(@v*1700+$seed*37, $seed+50, $wave*0.6, 4)-0.5)*2*$press) * (1 - $taper*pow(max(0, 1-min(@v,1-@v)*6), 2)))',
+      } },
+    },
+    output: 'pencil',
+  },
+};
 
 // ---- one Riso ink: register the stencil, halftone it, add grain, turn coverage into ink ----
 LIB.risoInk = {
@@ -86,4 +110,6 @@ LIB.risoPrint = {
 };
 
 
-export const print = LIB;
+
+for (const k in LIB) LIB[k].core = true;
+export const CORE_FUNCTIONS = LIB;

@@ -6,9 +6,10 @@ import type {
   SceneDoc,
   Selection,
 } from "../lib/types";
-import { LIB, SCENES } from "../lib/engine";
+import { PROJECT_FUNCTIONS, SCENES } from "../lib/engine";
 
-const STORAGE_KEY = "riso-editor-project";
+// bump when the document format changes; older autosaves are discarded
+const STORAGE_KEY = "riso-editor-project-v3";
 /** localStorage when it is usable (not in private windows or test runners) */
 function storage(): Storage | null {
   try {
@@ -22,7 +23,7 @@ function storage(): Storage | null {
 const HISTORY_MAX = 200;
 
 export function defaultDoc(): Doc {
-  return structuredClone({ scenes: SCENES, lib: LIB }) as Doc;
+  return structuredClone({ scenes: SCENES, lib: PROJECT_FUNCTIONS }) as Doc;
 }
 function loadDoc(): Doc {
   try {

@@ -39,17 +39,19 @@ blocks and is needed in more than one case. `hand` (the pencil) started as code 
 function once `resample` existed and points carried their tangent and normal. That is the
 direction things should flow: more functions, few blocks.
 
-Projects are ES modules. The core is one module; a project exports its functions and scenes;
-another project imports the same core and, if it wants the look, this project's `print.js`.
+Projects are ES modules. The core is one module and ships graph functions of its own (`hand`,
+`risoInk`, `risoPrint` in `engine/functions.js`), so the core is not only code: anything useful
+in more than one project moves there as a graph. A project exports its own functions and scenes.
+In the editor a core function is read-only until edited; editing forks a copy into the project.
 
 | File | Role |
 |---|---|
 | `engine/riso.js` | Core. Ink stencils: three grayscale canvases marks are painted onto. |
 | `engine/graph.js` | Core. Values, expressions, geometry and mark blocks, time blocks (`clip`, `sequence`), evaluator, mark painter. |
 | `engine/cops.js` | Core. Pixel blocks and previews. |
+| `engine/functions.js` | Core graph functions: `hand`, `risoInk`, `risoPrint`. |
 | `engine/scene.js` | Core. Runtime: one frame of a scene, display of any node, loop length. |
-| `projects/film/world.js` | Functions of this film: `hand`, `water`, `stars`, `bubble`, `jellyfish`, `sky`, `burst`, `ridge`, `treeline`, `flake`, `webflake`, `dot`. |
-| `projects/film/print.js` | The Riso look as functions of pixel blocks: `risoInk`, `risoPrint`. |
+| `projects/film/world.js` | Functions of this film: `water`, `stars`, `bubble`, `jellyfish`, `sky`, `burst`, `ridge`, `treeline`, `flake`, `webflake`. |
 | `projects/film/scenes.js` | The scenes: `jelly`, `fireworks`, `mountains`, `snow`, `main`. |
 | `projects/film/index.js` | The project module: `{ functions, scenes }`. |
 | `editor/` | The node-based editor app (see `editor/README.md`). |
@@ -218,9 +220,9 @@ The iris, the ring and the disc are ordinary nodes. The runtime only supplies `i
 | Scene | Frame | Built from |
 |---|---|---|
 | `jelly` | disc, iris | `water`, `stars`, three `jellyfish`, `bubble`, iris mask and ring nodes |
-| `fireworks` | full bleed, cut | two `sky` gradients (night, water), five `burst`, scattered glints copied to points, a skyline and boats as `polygon`, `dot` |
-| `mountains` | full bleed, cut | `sky` plus a radial sun haze, copied sun rings, three `ridge` layers, two `treeline` rows with a cut fog band between, `dot` |
-| `snow` | full bleed, cut | `sky`, three big `flake` prints in light pink, one detailed `flake` with a yellow hex core, a `webflake`, stars and sparkles, `dot` |
+| `fireworks` | full bleed, cut | two `sky` gradients (night, water), five `burst` through `hand`, glints scattered in colour columns, a skyline and boats as `polygon` |
+| `mountains` | full bleed, cut | `sky` plus a radial sun haze, copied sun rings, three `ridge` layers, two `treeline` rows with a cut fog band between |
+| `snow` | full bleed, cut | `sky`, three big `flake` prints in light pink, one detailed `flake` with a yellow hex core, a `webflake`, stars and sparkles |
 | `main` | composition | a `sequence` of `clip`s: jelly with its iris, then fireworks, snow and mountains as hard cuts, then jelly again |
 
 The film's montage section cuts every 3 frames; the jellyfish shot holds 12 frames inside an
@@ -238,7 +240,8 @@ varies like pressure, thinner ends, a little overshoot. The firework rays go thr
 
 ## Read from the film
 
-- One blue dot with a pink centre sits at canvas position (540, 540) in every shot. Worlds appear
+- One blue dot with a pink centre sits at canvas position (540, 540) in every shot of the film; it
+  is an artefact of the film, not part of the scenes here. Worlds appear
   around it and transitions scale about it.
 - Worlds are shown full bleed, in a disc, or as thumbnails in an index and a blue-only "gather" shot.
 - Transitions: iris (measured: 4 frames out, 12 hold, 4 in), ripples of blue arcs, and orbiting
