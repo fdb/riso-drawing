@@ -555,6 +555,7 @@ function GraphEditor({ graph }: { graph: GraphDoc }) {
           <div className="row">
             <label>about</label>
             <input
+              key={scene.name}
               className="text"
               defaultValue={scene.about ?? ""}
               onBlur={(e) =>
