@@ -15,19 +15,43 @@ test("renders the scene and shows the graph", async ({ page }) => {
   await expect(page.getByTestId("node-water")).toBeVisible();
 });
 
-test("selecting a node opens its parameters; a slider change can be undone", async ({
+test("selecting a node opens its parameters; a typed value can be undone", async ({
   page,
 }) => {
   await page.getByTestId("node-big").locator("rect.body").click();
   await expect(page.locator(".insp-head .id")).toHaveValue("big");
   const row = page.locator(".row", { hasText: "tentacles" });
   await expect(row.locator(".val")).toHaveText("24");
-  await row.locator("input[type=range]").fill("8");
+  await row.locator(".val").click();
+  await page.keyboard.type("8");
+  await page.keyboard.press("Enter");
   await expect(row.locator(".val")).toHaveText("8");
   await page.keyboard.press("ControlOrMeta+z");
   await expect(row.locator(".val")).toHaveText("24");
   await page.keyboard.press("ControlOrMeta+Shift+z");
   await expect(row.locator(".val")).toHaveText("8");
+});
+
+test("dragging a number changes it; the whole drag is one undo step", async ({
+  page,
+}) => {
+  await page.getByTestId("node-big").locator("rect.body").click();
+  const row = page.locator(".row", { hasText: "tentacles" });
+  await expect(row.locator(".val")).toHaveText("24");
+  const box = (await row.locator(".num").boundingBox())!;
+  const x = Math.round(box.x + box.width / 2),
+    y = Math.round(box.y + box.height / 2);
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  for (let i = 1; i <= 4; i++) await page.mouse.move(x - i * 5, y);
+  await expect(row.locator(".val")).toHaveText("4");
+  for (let i = 1; i <= 2; i++) await page.mouse.move(x - 20 + i * 5, y);
+  await page.mouse.up();
+  await expect(row.locator(".val")).toHaveText("14");
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(row.locator(".val")).toHaveText("24");
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(row.locator(".val")).toHaveText("24");
 });
 
 test("Tab opens the palette and adds a node; Delete removes it", async ({

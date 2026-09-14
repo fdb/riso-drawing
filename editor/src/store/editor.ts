@@ -7,6 +7,20 @@ import type {
   Selection,
 } from "../lib/types";
 import { PROJECT_FUNCTIONS, SCENES } from "../lib/engine";
+import {
+  docToFiles,
+  filesToDoc,
+  isProject,
+  type ProjectFiles,
+} from "../lib/projectFormat";
+import {
+  permissionOf,
+  pickFolder,
+  readFolder,
+  writeFolder,
+  type DirHandleLike,
+} from "../lib/projectFs";
+import { clearHandle, loadHandle, saveHandle } from "../lib/handleStore";
 
 // bump when the document format changes; older autosaves are discarded
 const STORAGE_KEY = "riso-editor-project-v3";
@@ -51,8 +65,42 @@ export interface UiState {
   timeReset: boolean;
 }
 
+/**
+ * memory: no folder, localStorage autosave. permission: a remembered folder that needs the
+ * user's consent again. The rest describe the open folder.
+ */
+export type SaveStatus =
+  "memory" | "permission" | "saved" | "saving" | "unsaved" | "error";
+export interface ProjectState {
+  dir: DirHandleLike | null;
+  name: string;
+  status: SaveStatus;
+  error: string | null;
+}
+const inMemory = (): ProjectState => ({
+  dir: null,
+  name: "film",
+  status: "memory",
+  error: null,
+});
+const onDisk = (p: ProjectState) =>
+  !!p.dir && p.status !== "memory" && p.status !== "permission";
+
 export interface EditorState {
   doc: Doc;
+  project: ProjectState;
+  /** pick a folder and switch to the project in it */
+  openFolder: () => Promise<void>;
+  /** pick an empty folder and start a project in it */
+  newProject: (template: "film" | "empty") => Promise<void>;
+  /** write pending changes to the folder now */
+  saveNow: () => Promise<void>;
+  /** ask consent for the remembered folder again (needs a user gesture), then open it */
+  grantAccess: () => Promise<void>;
+  /** forget the folder; the document stays, back in memory */
+  closeFolder: () => Promise<void>;
+  /** reopen the folder of the previous session, if any */
+  restoreProject: () => Promise<void>;
   past: Doc[];
   future: Doc[];
   dragBase: Doc | null;
@@ -121,11 +169,149 @@ export function emptyScene(name: string): SceneDoc {
   };
 }
 
+/** the smallest project: one world, no functions */
+export function emptyDoc(): Doc {
+  return { scenes: { scene: emptyScene("scene") }, lib: {} };
+}
+
+// what the open folder holds, so a save writes only what changed
+let diskFiles: ProjectFiles | null = null;
+// the document a folder load produced: not a change to save
+let loadedDoc: Doc | null = null;
+let saveTimer: ReturnType<typeof setTimeout> | undefined;
+// saves run one after another
+let saveChain: Promise<void> = Promise.resolve();
+
 export const useEditor = create<EditorState>()((set, get) => {
   const doc = loadDoc();
   const sceneName = firstScene(doc);
+  const setProject = (partial: Partial<ProjectState>) =>
+    set({ project: { ...get().project, ...partial } });
+  const fail = (e: unknown) =>
+    setProject({ error: (e as Error).message || String(e) });
+  /** make `dir` the open folder, showing `docIn` (loaded from it or just written to it) */
+  const adopt = async (
+    dir: DirHandleLike,
+    name: string,
+    docIn: Doc,
+    files: ProjectFiles,
+  ) => {
+    diskFiles = files;
+    loadedDoc = docIn;
+    get().load(docIn);
+    set({ project: { dir, name, status: "saved", error: null } });
+    try {
+      await saveHandle(dir);
+    } catch {
+      /* a handle that cannot be stored is forgotten on reload */
+    }
+  };
+  /** write what is pending before the folder changes */
+  const flush = async () => {
+    clearTimeout(saveTimer);
+    if (onDisk(get().project)) await get().saveNow();
+  };
   return {
     doc,
+    project: inMemory(),
+    openFolder: async () => {
+      try {
+        const dir = await pickFolder();
+        if (!dir) return;
+        const files = await readFolder(dir);
+        const { doc, name } = filesToDoc(files);
+        await flush();
+        await adopt(dir, name, doc, files);
+      } catch (e) {
+        fail(e);
+      }
+    },
+    newProject: async (template) => {
+      try {
+        const dir = await pickFolder();
+        if (!dir) return;
+        if (isProject(await readFolder(dir)))
+          throw new Error(
+            `"${dir.name}" already holds a project; open it instead`,
+          );
+        const doc = template === "film" ? defaultDoc() : emptyDoc();
+        const files = docToFiles(doc, dir.name);
+        await writeFolder(dir, files, null);
+        await flush();
+        await adopt(dir, dir.name, doc, files);
+      } catch (e) {
+        fail(e);
+      }
+    },
+    saveNow: () => {
+      saveChain = saveChain.then(async () => {
+        const { project, doc } = get();
+        if (!onDisk(project)) return;
+        const files = docToFiles(doc, project.name);
+        setProject({ status: "saving" });
+        try {
+          await writeFolder(project.dir!, files, diskFiles);
+          diskFiles = files;
+          if (get().project.dir === project.dir)
+            setProject({
+              status: get().doc === doc ? "saved" : "unsaved",
+              error: null,
+            });
+        } catch (e) {
+          setProject({ status: "error" });
+          fail(e);
+        }
+      });
+      return saveChain;
+    },
+    grantAccess: async () => {
+      const { dir } = get().project;
+      if (!dir) return;
+      try {
+        if ((await permissionOf(dir, true)) !== "granted")
+          throw new Error(`access to "${dir.name}" was not granted`);
+        const files = await readFolder(dir);
+        const { doc, name } = filesToDoc(files);
+        await adopt(dir, name, doc, files);
+      } catch (e) {
+        fail(e);
+      }
+    },
+    closeFolder: async () => {
+      await flush();
+      diskFiles = null;
+      set({ project: inMemory() });
+      try {
+        await clearHandle();
+      } catch {
+        /* nothing to forget */
+      }
+    },
+    restoreProject: async () => {
+      let dir: DirHandleLike | null = null;
+      try {
+        dir = await loadHandle();
+      } catch {
+        return;
+      }
+      if (!dir) return;
+      try {
+        if ((await permissionOf(dir, false)) !== "granted") {
+          set({
+            project: { dir, name: dir.name, status: "permission", error: null },
+          });
+          return;
+        }
+        const files = await readFolder(dir);
+        const { doc, name } = filesToDoc(files);
+        await adopt(dir, name, doc, files);
+      } catch (e) {
+        set({
+          project: { dir, name: dir.name, status: "permission", error: null },
+        });
+        fail(e);
+      }
+    },
     past: [],
     future: [],
     dragBase: null,
@@ -241,14 +427,19 @@ export const useEditor = create<EditorState>()((set, get) => {
   };
 });
 
-// autosave
-let saveTimer: ReturnType<typeof setTimeout> | undefined;
+// autosave: into the open folder, else into localStorage
 useEditor.subscribe((s, prev) => {
-  if (s.doc !== prev.doc) {
+  if (s.doc !== prev.doc && s.doc !== loadedDoc) {
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => {
-      storage()?.setItem(STORAGE_KEY, JSON.stringify(s.doc));
-    }, 400);
+    if (onDisk(s.project)) {
+      if (s.project.status !== "unsaved")
+        useEditor.setState({ project: { ...s.project, status: "unsaved" } });
+      saveTimer = setTimeout(() => void useEditor.getState().saveNow(), 1000);
+    } else {
+      saveTimer = setTimeout(() => {
+        storage()?.setItem(STORAGE_KEY, JSON.stringify(s.doc));
+      }, 400);
+    }
   }
   if (s.ui.theme !== prev.ui.theme)
     storage()?.setItem("riso-editor-theme", s.ui.theme);

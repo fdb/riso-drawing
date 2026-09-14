@@ -33,6 +33,7 @@ import type {
   ParamSchema,
   ParamValue,
 } from "../lib/types";
+import { NumberField } from "./NumberField";
 
 const DUMMY_CTX = {
   A: {},
@@ -45,10 +46,7 @@ const DUMMY_CTX = {
   cell: { blue: 5.6, pink: 5.2, yellow: 6.2 },
   angle: { blue: 0.26, pink: 0.79, yellow: 0 },
 };
-const fmt = (v: number, step = 0.01) =>
-  v.toFixed(step >= 1 ? 0 : step >= 0.1 ? 1 : step >= 0.01 ? 2 : 3);
-
-/** One parameter: slider for numbers, text for expressions, ƒ toggles between them. */
+/** One parameter: a draggable number, text for expressions, ƒ toggles between them. */
 export function ParamRow({
   label,
   value,
@@ -87,7 +85,7 @@ export function ParamRow({
       </div>
     );
   }
-  const isText = typeof value === "string" || schema?.min === undefined;
+  const isText = typeof value === "string" || kind === "text";
   const toggle = () => {
     if (typeof value === "string") {
       let v = Number(evalExpr(value, DUMMY_CTX));
@@ -96,40 +94,48 @@ export function ParamRow({
       onChange(Math.round(v * 1000) / 1000);
     } else onChange(String(value));
   };
+  const isColor =
+    kind === "color" &&
+    typeof value === "string" &&
+    /^#[0-9a-f]{6}$/i.test(value);
   return (
     <div className="row">
       <label title={label}>{label}</label>
       {isText ? (
-        <input
-          className="text"
-          value={text ?? String(value)}
-          onChange={(e) => setText(e.target.value)}
-          onBlur={() => {
-            if (text !== null && text !== String(value)) onChange(text);
-            setText(null);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-          }}
-        />
-      ) : (
-        <>
+        <span className={`field ${isColor ? "color" : ""}`}>
+          {isColor && (
+            <input
+              type="color"
+              value={value as string}
+              onChange={(e) => onChange(e.target.value)}
+              title="pick a colour"
+            />
+          )}
           <input
-            type="range"
-            min={schema!.min}
-            max={schema!.max}
-            step={schema!.step ?? 0.01}
-            value={Number(value)}
-            onPointerDown={() => onDrag?.(Number(value), "start")}
-            onPointerUp={() => onDrag?.(Number(value), "end")}
-            onChange={(e) =>
-              onDrag
-                ? onDrag(+e.target.value, "move")
-                : onChange(+e.target.value)
-            }
+            className="text"
+            value={text ?? String(value)}
+            onChange={(e) => setText(e.target.value)}
+            onBlur={() => {
+              if (text !== null && text !== String(value)) onChange(text);
+              setText(null);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+              if (e.key === "Escape") setText(null);
+            }}
+            spellCheck={false}
           />
-          <span className="val">{fmt(Number(value), schema!.step)}</span>
-        </>
+        </span>
+      ) : (
+        <NumberField
+          value={Number(value)}
+          min={schema?.min}
+          max={schema?.max}
+          step={schema?.step ?? 0.01}
+          onChange={(v) => onChange(v)}
+          onDrag={onDrag}
+          title="drag to change · click to type · ↑↓ nudge (⇧ ×10, ⌥ ×0.1)"
+        />
       )}
       {expr && kind !== "expr" && (
         <button

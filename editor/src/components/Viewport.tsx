@@ -21,7 +21,7 @@ const workers = new WeakMap<HTMLCanvasElement, { worker: Worker }>();
 
 /**
  * The viewer. Rendering runs in a worker that owns the canvas; this component only keeps time,
- * sends one frame request at a time, and shows the HUD. The main thread stays free for editing.
+ * sends one frame request at a time, and writes the status line under the canvas. The main thread stays free for editing.
  */
 export function Viewport() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -147,9 +147,13 @@ export function Viewport() {
   }, []);
 
   return (
-    <div className="viewport">
-      <canvas ref={canvasRef} width={540} height={540} />
+    <>
+      <div className="stage">
+        <div className="viewport">
+          <canvas ref={canvasRef} width={540} height={540} />
+        </div>
+      </div>
       <div className="hud" ref={hudRef} data-testid="hud" />
-    </div>
+    </>
   );
 }

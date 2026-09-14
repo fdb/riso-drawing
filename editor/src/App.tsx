@@ -5,6 +5,7 @@ import { Viewport } from "./components/Viewport";
 import { GraphView } from "./components/GraphView";
 import { Inspector } from "./components/Inspector";
 import { ProjectPanel } from "./components/ProjectPanel";
+import { ProjectMenu } from "./components/ProjectMenu";
 import { Palette } from "./components/Palette";
 import {
   resolveGraph,
@@ -89,7 +90,10 @@ export default function App() {
       <Toolbar />
       <div className="columns">
         <aside className="left">
-          <ProjectPanel />
+          <div>
+            <ProjectMenu />
+            <ProjectPanel />
+          </div>
           <div className="params">
             <Inspector />
           </div>

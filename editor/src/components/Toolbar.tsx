@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { useRef } from "react";
 import { useEditor } from "../store/editor";
+import { NumberField } from "./NumberField";
 import type { Doc } from "../lib/types";
 
 export function Toolbar() {
@@ -53,10 +54,12 @@ export function Toolbar() {
   return (
     <header className="toolbar">
       <div className="brand">
-        RISO EDITOR <span className="dot">●</span>
+        <span className="dot" /> Riso Editor
       </div>
+      <span className="sep" />
       <div className="group">
         <button
+          className="icon"
           title="Undo (⌘Z)"
           disabled={!canUndo}
           onClick={undo}
@@ -65,6 +68,7 @@ export function Toolbar() {
           <Undo2 size={15} />
         </button>
         <button
+          className="icon"
           title="Redo (⇧⌘Z)"
           disabled={!canRedo}
           onClick={redo}
@@ -73,8 +77,10 @@ export function Toolbar() {
           <Redo2 size={15} />
         </button>
       </div>
+      <span className="sep" />
       <div className="group">
         <button
+          className={`icon ${ui.playing ? "on" : ""}`}
           title="Play / pause (space)"
           onClick={() => setUi({ playing: !ui.playing })}
           aria-label="play"
@@ -82,6 +88,7 @@ export function Toolbar() {
           {ui.playing ? <Pause size={15} /> : <Play size={15} />}
         </button>
         <button
+          className="icon"
           title="Step one frame"
           onClick={() => setUi({ playing: false, stepTick: ui.stepTick + 1 })}
           aria-label="step"
@@ -89,6 +96,7 @@ export function Toolbar() {
           <SkipForward size={15} />
         </button>
         <button
+          className="icon"
           title="Back to t = 0"
           onClick={() => setUi({ timeReset: true })}
           aria-label="rewind"
@@ -100,22 +108,22 @@ export function Toolbar() {
             type="checkbox"
             checked={ui.loopHold}
             onChange={(e) => setUi({ loopHold: e.target.checked })}
-          />{" "}
+          />
           hold only
         </label>
-        <label>
+        <label className="field-label">
           speed
-          <input
-            type="range"
-            min={0}
-            max={2}
-            step={0.05}
+          <NumberField
             value={ui.speed}
-            onChange={(e) => setUi({ speed: +e.target.value })}
-            style={{ width: 70 }}
+            min={0}
+            max={4}
+            step={0.05}
+            onChange={(v) => setUi({ speed: v })}
+            title="playback speed: drag or click to type"
           />
         </label>
       </div>
+      <span className="sep" />
       <div className="group">
         <select
           value={ui.res}
@@ -133,10 +141,9 @@ export function Toolbar() {
           >
             <Eye size={13} /> {ui.display.id}
             <button
-              className="ghost"
+              className="ghost icon"
               onClick={() => setUi({ display: null })}
               aria-label="show output"
-              style={{ padding: 0 }}
             >
               <X size={12} />
             </button>
@@ -148,10 +155,16 @@ export function Toolbar() {
         )}
       </div>
       <div className="group right">
-        <button title="Export JSON" onClick={exportDoc} aria-label="export">
+        <button
+          className="icon"
+          title="Export JSON"
+          onClick={exportDoc}
+          aria-label="export"
+        >
           <Download size={15} />
         </button>
         <button
+          className="icon"
           title="Import JSON"
           onClick={() => fileRef.current?.click()}
           aria-label="import"
@@ -166,6 +179,7 @@ export function Toolbar() {
           onChange={(e) => importDoc(e.target.files?.[0])}
         />
         <button
+          className="icon"
           title="Reset to the built-in scene"
           onClick={() =>
             confirm(
@@ -176,7 +190,9 @@ export function Toolbar() {
         >
           <RotateCcw size={15} />
         </button>
+        <span className="sep" />
         <button
+          className="icon"
           title="Theme"
           onClick={() =>
             setUi({ theme: ui.theme === "light" ? "dark" : "light" })

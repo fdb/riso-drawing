@@ -1,0 +1,56 @@
+.project-menu {
+  border-bottom: 1px solid var(--line);
+  padding: 6px 8px 8px 12px;
+  display: grid;
+  gap: 6px;
+}
+.project-menu .pm-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.project-menu .pm-name {
+  flex: 1;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.project-menu .pm-status {
+  font-size: 11px;
+  color: var(--fg2);
+  white-space: nowrap;
+}
+.project-menu .pm-status.unsaved,
+.project-menu .pm-status.saving {
+  color: var(--yellow);
+}
+.project-menu .pm-status.saved {
+  color: var(--green);
+}
+.project-menu .pm-status.error,
+.project-menu .pm-status.permission {
+  color: var(--danger);
+}
+.project-menu .pm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.project-menu .pm-actions button {
+  height: 22px;
+  padding: 0 6px;
+  font-size: 11.5px;
+}
+.project-menu .pm-grant {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.project-menu .pm-note,
+.project-menu .pm-error {
+  margin: 0;
+}
+.project-menu .pm-error {
+  color: var(--danger);
+}

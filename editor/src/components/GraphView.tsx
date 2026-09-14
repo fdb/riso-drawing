@@ -332,6 +332,12 @@ export function GraphView() {
             else if (e.target === svgRef.current) openPalette();
           }}
         >
+          <defs>
+            <linearGradient id="node-grad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" className="g0" />
+              <stop offset="1" className="g1" />
+            </linearGradient>
+          </defs>
           <g transform={`translate(${cam.x} ${cam.y}) scale(${cam.k})`}>
             {edges.map((e) => {
               const [x0, y0] = posOf(e.from),

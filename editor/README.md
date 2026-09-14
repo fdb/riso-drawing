@@ -57,3 +57,43 @@ clone, which is one undo step. Slider drags use `beginDrag / drag / endDrag` so 
 one step. The document autosaves to localStorage.
 
 Not used from the stack: Hono, D1, TanStack Query. The editor has no server state.
+
+## Projects
+
+A project is a folder on disk. The editor opens it with the File System Access API and writes
+changes back into it. No server, no account.
+
+```
+my-film/
+  riso-project.json        { "format": 1, "name": "my-film", "scenes": [...], "functions": [...] }
+  scenes/<name>.json       one SceneDoc per scene
+  functions/<name>.json    one SubnetDoc per project function
+```
+
+Every file is pretty-printed JSON with a trailing newline, so a project folder diffs well and
+can live in git. The manifest lists scenes and functions in document order. A file the manifest
+does not list is loaded too, after the listed ones. Other files in the folder are left alone.
+Names that are not safe file names are percent-encoded (`a/b` → `a%2Fb.json`). The in-app
+document stays `{ scenes, lib }`; `src/lib/projectFormat.ts` converts both ways.
+
+The project menu sits above the scene list:
+
+- **Open…** picks a folder and switches to the project in it.
+- **New from film…** / **New empty…** pick an empty folder and write a starting project into it:
+  the built-in film, or one empty scene. A folder that already holds a project is refused.
+- **Autosave**: one second after a change, the files whose content changed are written and the
+  files of removed scenes and functions are deleted. The status shows `saved`, `saving…`,
+  `unsaved` or `save failed` (with a **Save** button to retry). `not on disk` means no folder is
+  open: the document lives in memory and autosaves to localStorage, as before.
+- **Reopen on reload**: the folder handle is kept in IndexedDB. Chrome usually needs consent
+  again after a reload; the menu then shows **Grant access** (a permission request needs a
+  click). Until it is granted the editor shows the in-memory document.
+- **Close** (×) forgets the folder. The document stays open in memory.
+
+Export / import JSON in the toolbar still move the whole document as one file. Import into an
+open folder writes the imported document into that folder. Reset does the same with the
+built-in film.
+
+Browser support: Chrome and Edge (desktop) have `showDirectoryPicker`. Firefox and Safari do
+not; the menu says so and disables the folder buttons, and export / import JSON remain the way
+to move a project around.
