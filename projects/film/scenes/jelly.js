@@ -12,9 +12,8 @@ export const scene = {
       stars: { type: 'stars', params: { cx: 540, cy: 540, r: 800, count: 420 } },
       'small-left': { type: 'jellyfish', params: { x: 250, y: 700, r: 80, rot: -0.05, tentacles: 12, length: 2.6, bob: 5 } },
       'small-right': { type: 'jellyfish', params: { x: 930, y: 640, r: 65, rot: 0.08, tentacles: 11, length: 2.8, bob: 4 } },
-      big: { type: 'jellyfish', params: { x: 600, y: '380 - 10*u', r: 165, tentacles: 24, length: 3.0, curl: 1.3, bob: 6 } },
-      bubble: { type: 'bubble', params: { x: 420, y: 500, r: 21 } },
-      marks: { type: 'merge', in: { list: ['water', 'stars', 'small-left', 'small-right', 'big', 'bubble'] } },
+      big: { type: 'jellyfish', params: { x: 600, y: '380 - 14*sin(t*TAU/3)', r: 165, tentacles: 24, length: 3.0, curl: 1.3, bob: 6 } },
+      marks: { type: 'merge', in: { list: ['water', 'stars', 'small-left', 'small-right', 'big'] } },
       // compositing: paint the marks onto three stencils, then print
       stencils: { type: 'rasterize', in: { marks: 'marks' } },
       print: { type: 'risoPrint', in: { stencils: 'stencils' }, params: {

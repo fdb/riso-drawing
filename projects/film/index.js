@@ -3,7 +3,6 @@
 // One file per function and per scene, so parts can be written and reviewed on their own.
 import { water } from './functions/water.js';
 import { stars } from './functions/stars.js';
-import { bubble } from './functions/bubble.js';
 import { jellyfish } from './functions/jellyfish.js';
 import { sky } from './functions/sky.js';
 import { burst } from './functions/burst.js';
@@ -25,6 +24,6 @@ import * as partE from './parts/e.js';
 import * as partF from './parts/f.js';
 const parts = [partA, partB, partC, partD, partE, partF];
 
-export const functions = { ...Object.assign({}, ...parts.map((p) => p.functions)),  water, stars, bubble, jellyfish, sky, burst, ridge, treeline, flake, webflake };
+export const functions = { ...Object.assign({}, ...parts.map((p) => p.functions)),  water, stars, jellyfish, sky, burst, ridge, treeline, flake, webflake };
 export const scenes = { ...Object.assign({}, ...parts.map((p) => p.scenes)),  jelly, fireworks, mountains, snow, main };
 export const project = { name: 'film', functions, scenes };

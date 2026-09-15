@@ -185,26 +185,29 @@ inner ellipse holds three tints and a fan of rays, an arc with a sine width cuts
 
 ```js
 {
+  name: 'jelly',
   seed: 5,
-  transition: { type: 'iris', open: 0.17, hold: 0.5, close: 0.17, gap: 0.3 },
+  transition: null,
   graph: {
+    let: { cellBlue: 5.6, cellPink: 5.2, cellYellow: 6.2, angleBlue: 15, anglePink: 45, angleYellow: 0 },
     nodes: {
-      disc:  { type: 'circle', params: { x: 660, y: 535, r: 313 } },
-      water: { type: 'water' },
-      big:   { type: 'jellyfish', params: { x: 674, y: '358 - 10*u', r: 140, tentacles: 24 } },
-      world: { type: 'merge', in: { list: ['water', 'stars', 'small-left', 'small-right', 'big', 'bubble'] } },
-      worldClip: { type: 'clip', in: { marks: 'world', geo: 'disc' } },
-      irisC: { type: 'circle', params: { x: '540 + iris*120', y: '542 - iris*7', r: 'max(0, iris*318 - 5)' } },
-      irisMask: { type: 'mask', in: { geo: 'irisC' } },
-      ring:  { type: 'wrangle', in: { geo: 'ringC' }, params: { x: '@x + cos(@a)*(…wobble…)', … } },
-      out:   { type: 'merge', in: { list: ['worldClip', 'irisMask', 'ringB', 'ringY'] } },
+      water: { type: 'water', params: { cx: 540, cy: 540, r: 800 } },
+      stars: { type: 'stars', params: { cx: 540, cy: 540, r: 800, count: 420 } },
+      'small-left':  { type: 'jellyfish', params: { x: 250, y: 700, r: 80, tentacles: 12 } },
+      'small-right': { type: 'jellyfish', params: { x: 930, y: 640, r: 65, tentacles: 11 } },
+      big:   { type: 'jellyfish', params: { x: 600, y: '380 - 14*sin(t*TAU/3)', r: 165, tentacles: 24 } },
+      marks: { type: 'merge', in: { list: ['water', 'stars', 'small-left', 'small-right', 'big'] } },
+      stencils: { type: 'rasterize', in: { marks: 'marks' } },
+      print: { type: 'risoPrint', in: { stencils: 'stencils' }, params: { blueCell: '$cellBlue', … } },
     },
-    output: 'out',
+    output: 'print',
+    marks: 'marks',
   },
 }
 ```
 
-The iris, the ring and the disc are ordinary nodes. The runtime only supplies `iris` and time.
+The scene is full bleed: its marks cover the whole frame, and `main` cuts to it with a `clip`.
+The print is an ordinary node at the end of the graph. The runtime only supplies time.
 
 ## Evaluation
 
@@ -235,7 +238,7 @@ stacked by a `sequence` with hard cuts, 3 s per world, 102 s in all.
 | `rocket` `city` `saturn` `balloons` `volcano` | `rocketShip`, `rocketPuff`, `cityBuilding`, `balloonsBalloon` |
 | `telescope` `campfire` `sunflowers` `snow` `mountains` `savanna` `pond` | `telescopeDishlet`, `campfireFlame`, `sunflower`, `flake`, `webflake`, `ridge`, `treeline`, `pondBubbles` |
 
-General functions used across worlds: `sky`, `water`, `stars`, `bubble`, `hand`. The worlds
+General functions used across worlds: `sky`, `water`, `stars`, `hand`. The worlds
 were built by six builders in parallel from one brief, each owning one part module; the fact
 that 29 worlds came out of the same 40 blocks without a core change is the test the language
 had to pass.
