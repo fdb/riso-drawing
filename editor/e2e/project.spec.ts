@@ -120,3 +120,48 @@ test("a new project is written to the picked folder and autosaves", async ({
   await expect(page.getByTestId("scene-snow")).toHaveCount(0);
   await expect(page.getByTestId("scene-jelly")).toBeVisible();
 });
+
+test("an autosave made from an older film still shows the shipped worlds", async ({
+  page,
+}) => {
+  // an autosave from before the worlds existed: four scenes and main
+  await page.addInitScript(() => {
+    if (sessionStorage.getItem("seeded")) return;
+    sessionStorage.setItem("seeded", "1");
+    const scene = (name: string) => ({
+      name,
+      seed: 1,
+      transition: null,
+      graph: { nodes: {}, output: "" },
+    });
+    const scenes = Object.fromEntries(
+      ["main", "jelly", "fireworks", "snow", "mountains"].map((n) => [
+        n,
+        scene(n),
+      ]),
+    );
+    localStorage.setItem(
+      "riso-editor-project-v3",
+      JSON.stringify({ scenes, lib: {} }),
+    );
+  });
+  await page.goto("/");
+  await expect(page.getByTestId("scene-owl")).toBeVisible();
+  await expect(page.getByTestId("scene-pond")).toBeVisible();
+
+  // an edit survives a reload; the rest keeps following the shipped project
+  await page.getByTestId("scene-jelly").click();
+  await page.getByTestId("bypass-marks").click();
+  await page.waitForFunction(() =>
+    (localStorage.getItem("riso-editor-project-v4") ?? "").includes(
+      '"bypass":true',
+    ),
+  );
+  await page.reload();
+  await page.getByTestId("scene-jelly").click();
+  await expect(page.getByTestId("node-marks")).toHaveClass(/bypassed/);
+  await expect(page.getByTestId("scene-owl")).toBeVisible();
+  expect(
+    await page.evaluate(() => localStorage.getItem("riso-editor-project-v3")),
+  ).toBeNull();
+});

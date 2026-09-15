@@ -21,9 +21,11 @@ import {
   type DirHandleLike,
 } from "../lib/projectFs";
 import { clearHandle, loadHandle, saveHandle } from "../lib/handleStore";
+import { baseOf, mergeShipped, type Base } from "../lib/autosave";
 
 // bump when the document format changes; older autosaves are discarded
-const STORAGE_KEY = "riso-editor-project-v3";
+const STORAGE_KEY = "riso-editor-project-v4";
+const OLD_KEYS = ["riso-editor-project-v3"];
 /** localStorage when it is usable (not in private windows or test runners) */
 function storage(): Storage | null {
   try {
@@ -39,12 +41,17 @@ const HISTORY_MAX = 200;
 export function defaultDoc(): Doc {
   return structuredClone({ scenes: SCENES, lib: PROJECT_FUNCTIONS }) as Doc;
 }
+/** the autosaved project, brought up to date with the shipped one */
 function loadDoc(): Doc {
   try {
+    for (const k of OLD_KEYS) storage()?.removeItem(k);
     const raw = storage()?.getItem(STORAGE_KEY);
     if (raw) {
-      const d = JSON.parse(raw) as Doc;
-      if (d.scenes && d.lib && Object.keys(d.scenes).length) return d;
+      const { doc, base } = JSON.parse(raw) as { doc: Doc; base: Base };
+      if (doc?.scenes && doc.lib && base) {
+        const merged = mergeShipped(doc, base, defaultDoc());
+        if (Object.keys(merged.scenes).length) return merged;
+      }
     }
   } catch {
     /* fall through to default */
@@ -437,7 +444,10 @@ useEditor.subscribe((s, prev) => {
       saveTimer = setTimeout(() => void useEditor.getState().saveNow(), 1000);
     } else {
       saveTimer = setTimeout(() => {
-        storage()?.setItem(STORAGE_KEY, JSON.stringify(s.doc));
+        storage()?.setItem(
+          STORAGE_KEY,
+          JSON.stringify({ doc: s.doc, base: baseOf(defaultDoc()) }),
+        );
       }, 400);
     }
   }
