@@ -224,7 +224,7 @@ The iris, the ring and the disc are ordinary nodes. The runtime only supplies `i
 
 All 34 worlds of the film exist as scenes, full bleed, cut. Every scene is one graph that ends in
 `marks → rasterize → risoPrint`. `main` is the composition: one `clip` per world in film order,
-stacked by a `sequence` with hard cuts, 0.125 s per world (fireworks 0.25 s, jelly 0.5 s).
+stacked by a `sequence` with hard cuts, 3 s per world, 102 s in all.
 
 | Worlds | Notable functions |
 |---|---|
