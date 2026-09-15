@@ -265,8 +265,9 @@ through it, and copies vary their size with `rand` so nothing repeats exactly.
 
 ## Next
 
-Blocks the builders asked for, each seen in more than one world, so each is a candidate for the
-core under the rule above. None is added yet; every world was built without them:
+Blocks the builders asked for while building the worlds. Each is a candidate for the core under
+the rule above; none is added yet. `specs/core-blocks.md` specifies the first three: `offset`,
+a soft cut as a `mode` on `tint`, and a `stripes` graph function.
 
 - `grid`: points on a lattice (city windows, piano keys, kettle tiles), now `scatter` plus `wrangle`.
 - `stripes` / `hatch`: parallel lines inside a shape (balloon gores, bell waves, rain).
