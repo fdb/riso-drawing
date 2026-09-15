@@ -31,6 +31,8 @@ const send = (method, params = {}) => new Promise(r => { const i = ++id; pending
 const evalJs = async expr => (await send('Runtime.evaluate', { expression: expr, returnByValue: true })).result?.result?.value;
 
 await send('Runtime.enable');
+// the viewport is exactly size×size regardless of browser chrome, so screenshots are the whole page
+await send('Emulation.setDeviceMetricsOverride', { width: size, height: size, deviceScaleFactor: 1, mobile: false });
 await send('Page.navigate', { url });
 const t0 = Date.now(); let title = 'RUNNING';
 while (Date.now() - t0 < 90000) { await sleep(250); title = await evalJs('document.title'); if (title && title !== 'RUNNING') break; }

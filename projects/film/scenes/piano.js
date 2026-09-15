@@ -1,0 +1,111 @@
+// piano: scene data. Params may be numbers or expressions of t, u, iris.
+export const scene = {
+  name: 'piano',
+  about: 'a grand piano from above: the harp of strings, pins, dampers, keys, and rings of sound',
+  seed: 9,
+  transition: null,
+  graph: {
+    let: { cellBlue: 6.5, cellPink: 6.5, cellYellow: 7, angleBlue: 15, anglePink: 45, angleYellow: 0 },
+    nodes: {
+      // the floor beyond the case: navy screen with paper dots
+      floor: { type: 'sky', params: { y: 0, h: 1080, blueTop: 0.85, blueBottom: 0.85, pinkTop: 0.4, pinkBottom: 0.45, mottle: 0.25, cell: 7, seed: 9 } },
+      // the soundboard: yellow with a red screen
+      board: { type: 'polygon', params: { pts: '20 -10 330 -10 450 50 580 140 700 250 810 390 900 550 955 720 985 905 20 905' } },
+      boardY: { type: 'fill', in: { geo: 'board' }, params: { ink: 'yellow', mode: 'solid' } },
+      boardF: { type: 'field', params: { expr: 'clamp(0.3 + 0.18*(noise(@x,@y,40,3)-0.5) + 0.18*radial(@x,@y,540,600,500))' } },
+      boardP: { type: 'tint', in: { geo: 'board', field: 'boardF' }, params: { ink: 'pink', cell: '$cellPink', angle: 0.8 } },
+      // plate cut-outs: denser red
+      cutA: { type: 'polygon', params: { pts: '150 -10 262 -10 250 60 236 92 170 96 150 70' } },
+      cutB: { type: 'polygon', params: { pts: '112 150 230 138 246 160 180 520 140 546 100 520' } },
+      cuts: { type: 'merge', in: { list: ['cutA', 'cutB'] } },
+      cutsH: { type: 'hand', in: { geo: 'cuts' }, params: { step: 8, wobble: 2, wave: 100, jitter: 0.5, press: 0, taper: 0, overshoot: 0 } },
+      cutsF: { type: 'field', params: { expr: '0.72 + 0.15*(noise(@x,@y,30,4)-0.5)' } },
+      cutsP: { type: 'tint', in: { geo: 'cutsH', field: 'cutsF' }, params: { ink: 'pink', cell: '$cellPink', angle: 0.8 } },
+      cutsE: { type: 'stroke', in: { geo: 'cutsH' }, params: { ink: 'blue', mode: 'add', w: 3, tone: 0.7 } },
+      // strings: thick wound bass strings on the left, thin treble strings to the right, all down to the pins
+      bass: { type: 'copy', params: { n: 13 }, template: { nodes: {
+        l: { type: 'line', params: { x0: '112+@i*21', y0: -10, x1: '240+@i*21', y1: 720, n: 6 } },
+        w: { type: 'wrangle', in: { geo: 'l' }, params: { w: '7-@i*0.2+rand(1)' } } }, output: 'w' } },
+      treble: { type: 'copy', params: { n: 58 }, template: { nodes: {
+        l: { type: 'line', params: { x0: '360+@i*10', y0: -10, x1: '392+@i*8.9', y1: 720, n: 6 } },
+        w: { type: 'wrangle', in: { geo: 'l' }, params: { w: '3.2-@i*0.03+rand(1)*0.6' } } }, output: 'w' } },
+      strings: { type: 'merge', in: { list: ['bass', 'treble'] } },
+      stringsH: { type: 'hand', in: { geo: 'strings' }, params: { step: 10, wobble: 0.5, wave: 200, jitter: 0.25, press: 0.2, taper: 0, overshoot: 0 } },
+      bassHi: { type: 'transform', in: { geo: 'bass' }, params: { x: 2 } },
+      bassHiS: { type: 'stroke', in: { geo: 'bassHi' }, params: { ink: 'all', mode: 'cut', w: 1.4 } },
+      // bridge outlines and pins on the board
+      ribA: { type: 'ellipse', params: { x: 640, y: 505, rx: 82, ry: 150, rot: 0.32, n: 48 } },
+      ribB: { type: 'ellipse', params: { x: 790, y: 612, rx: 40, ry: 48, rot: 0.2, n: 32 } },
+      ribs: { type: 'merge', in: { list: ['ribA', 'ribB'] } },
+      ribsH: { type: 'hand', in: { geo: 'ribs' }, params: { step: 8, wobble: 1.5, wave: 100, jitter: 0.4, press: 0.4, taper: 0, overshoot: 0 } },
+      ribsW: { type: 'wrangle', in: { geo: 'ribsH' }, params: { w: '@pw*2' } },
+      ribsB: { type: 'stroke', in: { geo: 'ribsW' }, params: { ink: 'blue', mode: 'add', tone: 0.8 } },
+      pinPts: { type: 'scatter', in: { geo: 'board' }, params: { count: 36 } },
+      pinsB: { type: 'dots', in: { geo: 'pinPts' }, params: { ink: 'blue', mode: 'add', tone: 0.85, r: '(3+3*rand(1))*(@y<690)' } },
+      // the pin block: a light band, dark tuning pins, a red rail, dampers
+      block: { type: 'polygon', params: { pts: '60 700 900 700 900 726 60 726' } },
+      blockY: { type: 'fill', in: { geo: 'block' }, params: { ink: 'yellow', mode: 'solid' } },
+      pins: { type: 'copy', params: { n: 36, x: '76+@i*22.6+(rand(1)-0.5)*3' }, template: { nodes: {
+        r: { type: 'polygon', params: { pts: '-6 726 6 726 6 780 -6 780' } } }, output: 'r' } },
+      rail: { type: 'polygon', params: { pts: '50 800 905 798 905 822 50 824' } },
+      railP: { type: 'fill', in: { geo: 'rail' }, params: { ink: 'pink', mode: 'solid' } },
+      railY: { type: 'fill', in: { geo: 'rail' }, params: { ink: 'yellow', mode: 'add', tone: 0.85 } },
+      dampers: { type: 'copy', params: { n: 44, x: '68+@i*19.2+(rand(1)-0.5)*3', y: '866+(rand(2)-0.5)*6' }, template: { nodes: {
+        c: { type: 'circle', params: { x: 0, y: 0, r: 5, n: 12 } },
+        tick: { type: 'polygon', params: { pts: '0 -22 0 -8', closed: 0 } },
+        both: { type: 'merge', in: { list: ['c', 'tick'] } } }, output: 'both' } },
+      bracket: { type: 'polygon', params: { pts: '598 690 620 690 620 790 598 790' } },
+      bracketCap: { type: 'polygon', params: { pts: '596 760 622 760 622 790 596 790' } },
+      bracketCapP: { type: 'fill', in: { geo: 'bracketCap' }, params: { ink: 'pink', mode: 'solid', tone: 0.8 } },
+      // the case: a curved rim, the left side, the fall board over the keys; dark olive from all three inks
+      rimPath: { type: 'polygon', params: { pts: '330 -20 450 50 580 140 700 250 810 390 900 550 955 720 985 905', closed: 0 } },
+      rimH: { type: 'hand', in: { geo: 'rimPath' }, params: { step: 10, wobble: 1.5, wave: 200, jitter: 0.5, press: 0.15, taper: 0, overshoot: 0 } },
+      rimW: { type: 'wrangle', in: { geo: 'rimH' }, params: { w: '@pw*28' } },
+      side: { type: 'polygon', params: { pts: '-10 -10 42 -10 42 905 -10 905' } },
+      fallboard: { type: 'polygon', params: { pts: '-10 905 1090 898 1090 950 -10 956' } },
+      oliveFill: { type: 'merge', in: { list: ['side', 'fallboard', 'pins', 'bracket'] } },
+      oliveFillB: { type: 'fill', in: { geo: 'oliveFill' }, params: { ink: 'blue', mode: 'solid' } },
+      oliveFillY: { type: 'fill', in: { geo: 'oliveFill' }, params: { ink: 'yellow', mode: 'add' } },
+      oliveFillP: { type: 'fill', in: { geo: 'oliveFill' }, params: { ink: 'pink', mode: 'add', tone: 0.55 } },
+      oliveLine: { type: 'merge', in: { list: ['stringsH', 'dampers'] } },
+      oliveLineB: { type: 'stroke', in: { geo: 'oliveLine' }, params: { ink: 'blue', mode: 'solid', w: 2 } },
+      oliveLineY: { type: 'stroke', in: { geo: 'oliveLine' }, params: { ink: 'yellow', mode: 'add', w: 2 } },
+      oliveLineP: { type: 'stroke', in: { geo: 'oliveLine' }, params: { ink: 'pink', mode: 'add', w: 2, tone: 0.55 } },
+      stringsC: { type: 'crop', in: { marks: ['oliveLineB', 'oliveLineY', 'oliveLineP', 'bassHiS'], geo: 'board' } },
+      rimB: { type: 'stroke', in: { geo: 'rimW' }, params: { ink: 'blue', mode: 'solid' } },
+      rimY: { type: 'stroke', in: { geo: 'rimW' }, params: { ink: 'yellow', mode: 'add' } },
+      rimP: { type: 'stroke', in: { geo: 'rimW' }, params: { ink: 'pink', mode: 'add', tone: 0.55 } },
+      damperFill: { type: 'fill', in: { geo: 'dampers' }, params: { ink: 'blue', mode: 'solid' } },
+      damperFillY: { type: 'fill', in: { geo: 'dampers' }, params: { ink: 'yellow', mode: 'add' } },
+      // the keyboard
+      keys: { type: 'polygon', params: { pts: '-10 950 1090 944 1090 1090 -10 1090' } },
+      keysW: { type: 'fill', in: { geo: 'keys' }, params: { ink: 'all', mode: 'cut' } },
+      keysF: { type: 'field', params: { expr: 'clamp(0.32*(1-lin(@x,@y,0,950,0,1030)) + 0.08*(noise(@x,@y,40,6)-0.5))' } },
+      keysB: { type: 'tint', in: { geo: 'keys', field: 'keysF' }, params: { ink: 'blue', cell: 6, angle: 0.26 } },
+      keyLines: { type: 'copy', params: { n: 26, x: '-10+@i*45+(rand(1)-0.5)*2' }, template: { nodes: {
+        l: { type: 'line', params: { x0: 0, y0: 948, x1: 3, y1: 1090, n: 2 } } }, output: 'l' } },
+      keyLinesH: { type: 'hand', in: { geo: 'keyLines' }, params: { step: 8, wobble: 0.8, wave: 100, jitter: 0.3, press: 0.4, taper: 0, overshoot: 0 } },
+      keyLinesS: { type: 'stroke', in: { geo: 'keyLinesH' }, params: { ink: 'blue', mode: 'add', tone: 0.7 } },
+      blackKeys: { type: 'copy', params: { n: 26, x: '-10+@i*45+(rand(1)-0.5)*2' }, template: { nodes: {
+        r: { type: 'polygon', params: { pts: '-14 946 14 946 14 1036 -14 1036' }, when: '(@i%7)==1 || (@i%7)==2 || (@i%7)==4 || (@i%7)==5 || (@i%7)==6' } }, output: 'r' } },
+      blackH: { type: 'hand', in: { geo: 'blackKeys' }, params: { step: 8, wobble: 0.8, wave: 100, jitter: 0.3, press: 0, taper: 0, overshoot: 0 } },
+      blackB: { type: 'fill', in: { geo: 'blackH' }, params: { ink: 'blue', mode: 'solid' } },
+      blackY: { type: 'fill', in: { geo: 'blackH' }, params: { ink: 'yellow', mode: 'add' } },
+      blackP: { type: 'fill', in: { geo: 'blackH' }, params: { ink: 'pink', mode: 'add', tone: 0.55 } },
+      // rings of sound, paper-white, growing a little
+      rings: { type: 'copy', params: { n: 7 }, template: { nodes: {
+        a: { type: 'ellipse', params: { x: 600, y: 715, rx: '62+@i*94+6*sin(t*1.5+@i*0.7)', ry: '62+@i*94+6*sin(t*1.5+@i*0.7)', a0: '184+@i*2', a1: '356-@i*2', n: 48 } } }, output: 'a' } },
+      ringsH: { type: 'hand', in: { geo: 'rings' }, params: { step: 8, wobble: 1.5, wave: 160, jitter: 0.4, press: 0.5, taper: 0.5, overshoot: 0 } },
+      ringsW: { type: 'wrangle', in: { geo: 'ringsH' }, params: { w: '@pw*2.4' } },
+      ringsShadow: { type: 'transform', in: { geo: 'ringsW' }, params: { x: 3, y: 3 } },
+      ringsShadowS: { type: 'stroke', in: { geo: 'ringsShadow' }, params: { ink: 'blue', mode: 'add', tone: 0.8 } },
+      ringsS: { type: 'stroke', in: { geo: 'ringsW' }, params: { ink: 'all', mode: 'cut' } },
+      marks: { type: 'merge', in: { list: ['floor', 'boardY', 'boardP', 'cutsP', 'cutsE', 'stringsC', 'ribsB', 'pinsB', 'blockY', 'railP', 'railY', 'damperFill', 'damperFillY',
+        'oliveFillB', 'oliveFillY', 'oliveFillP', 'rimB', 'rimY', 'rimP', 'bracketCapP', 'keysW', 'keysB', 'keyLinesS', 'blackB', 'blackY', 'blackP', 'ringsShadowS', 'ringsS'] } },
+      stencils: { type: 'rasterize', in: { marks: 'marks' } },
+      print: { type: 'risoPrint', in: { stencils: 'stencils' }, params: { blueCell: '$cellBlue', pinkCell: '$cellPink', yellowCell: '$cellYellow', blueAngle: '$angleBlue', pinkAngle: '$anglePink', yellowAngle: '$angleYellow' } },
+    },
+    output: 'print',
+    marks: 'marks',
+  },
+};

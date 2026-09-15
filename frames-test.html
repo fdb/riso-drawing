@@ -1,0 +1,25 @@
+<!doctype html><meta charset="utf-8"><title>RUNNING</title>
+<script type="module">
+// Multi-frame GPU vs CPU comparison of a scene: the static-prefix snapshot is exercised across frames.
+// Title PASS when fewer than 3% of pixels differ strongly in every frame (thin strokes through the halftone leave edge pixels).
+import { SceneRunner, setLibrary, createGpu, attachRaster, makeCanvas, evalScene } from './engine/index.js';
+import { project } from './projects/film/index.js';
+setLibrary(project.functions);
+// ?scene=<name> (default jelly): every frame is rendered by the GPU and the CPU runtime and compared
+const q = new URLSearchParams(location.search), scene = project.scenes[q.get('scene') || 'jelly'];
+const res = 540, frames = [0, 1, 2, 5, 9];
+const gpu = await createGpu(); attachRaster(gpu);
+const cvG = makeCanvas(res, res), cvC = makeCanvas(res, res);
+const rG = new SceneRunner(res, scene, project.scenes, gpu), rC = new SceneRunner(res, scene, project.scenes, null);
+const tG = { gpuCtx: cvG.getContext('webgpu'), scratch: makeCanvas(res, res).getContext('2d') }, cC = cvC.getContext('2d');
+const out = [];
+for (const f of frames) {
+  rG.render(tG, f / 24, f, {}); rC.render(cC, f / 24, f, {});
+  const bmp = await createImageBitmap(cvG); const tmp = makeCanvas(res, res).getContext('2d'); tmp.drawImage(bmp, 0, 0);
+  const a = tmp.getImageData(0, 0, res, res).data, b = cC.getImageData(0, 0, res, res).data;
+  let sum = 0, bad = 0; for (let k = 0; k < a.length; k += 4) { const d = Math.abs(a[k] - b[k]) + Math.abs(a[k + 1] - b[k + 1]) + Math.abs(a[k + 2] - b[k + 2]); sum += d; if (d > 120) bad++; }
+  out.push(`f${f}: mean ${(sum / (a.length / 4) / 3).toFixed(2)} bad ${(bad / (a.length / 4) * 100).toFixed(2)}%`);
+}
+document.body.innerText = out.join('\n');
+document.title = out.every(l => +l.split('bad ')[1].replace('%', '') < 3) ? 'PASS' : 'FAIL';
+</script>

@@ -53,11 +53,12 @@ In the editor a core function is read-only until edited; editing forks a copy in
 | `engine/gpu-raster.js` | Core. Marks to stencils on the GPU, with the static-prefix snapshot. |
 | `engine/functions.js` | Core graph functions: `hand`, `risoInk`, `risoPrint`. |
 | `engine/scene.js` | Core. Runtime: one frame of a scene, display of any node, loop length. |
-| `projects/film/world.js` | Functions of this film: `water`, `stars`, `bubble`, `jellyfish`, `sky`, `burst`, `ridge`, `treeline`, `flake`, `webflake`. |
-| `projects/film/scenes.js` | The scenes: `jelly`, `fireworks`, `mountains`, `snow`, `main`. |
-| `projects/film/index.js` | The project module: `{ functions, scenes }`. |
+| `projects/film/functions/*.js` | Functions of this film, one per file (`water`, `jellyfish`, `sky`, `burst`, `ridge`, `phoneDial`, `campfireFlame`, …). Names carry the world they were made for unless they are general. |
+| `projects/film/scenes/*.js` | The scenes built here: `jelly`, `fireworks`, `mountains`, `snow`, `main`. |
+| `projects/film/parts/{a..f}.js` | The other worlds, five per part, each part registering its functions and scenes. |
+| `projects/film/index.js` | The project module: `{ functions, scenes }`, merged from the parts and the files above. |
 | `editor/` | The node-based editor app (see `editor/README.md`). |
-| `render.html`, `render.sh`, `render-anim.sh` | Headless page and scripts: one frame of a named scene to PNG, or a sequence to mp4. `?gpu=1` runs the pixel chain on the GPU. |
+| `render.html`, `render.sh`, `render-anim.sh`, `scripts/sheet.sh` | Headless page and scripts: one frame of a named scene to PNG, a scene to mp4, tiles to a contact sheet. `?gpu=1` runs the whole pipeline on the GPU. |
 | `scripts/run-headless.mjs` | Headless Chrome over the DevTools protocol, with WebGPU; `--shot` saves a PNG. |
 | `gpu-test.html`, `raster-test.html` | Every GPU kernel, and the rasterizer on two scenes, against the CPU; title PASS or FAIL. |
 
@@ -221,26 +222,33 @@ The iris, the ring and the disc are ordinary nodes. The runtime only supplies `i
 
 ## Scenes so far
 
-| Scene | Frame | Built from |
-|---|---|---|
-| `jelly` | disc, iris | `water`, `stars`, three `jellyfish`, `bubble`, iris mask and ring nodes |
-| `fireworks` | full bleed, cut | two `sky` gradients (night, water), five `burst` through `hand`, glints scattered in colour columns, a skyline and boats as `polygon` |
-| `mountains` | full bleed, cut | `sky` plus a radial sun haze, copied sun rings, three `ridge` layers, two `treeline` rows with a cut fog band between |
-| `snow` | full bleed, cut | `sky`, three big `flake` prints in light pink, one detailed `flake` with a yellow hex core, a `webflake`, stars and sparkles |
-| `main` | composition | a `sequence` of `clip`s: jelly with its iris, then fireworks, snow and mountains as hard cuts, then jelly again |
+All 34 worlds of the film exist as scenes, full bleed, cut. Every scene is one graph that ends in
+`marks → rasterize → risoPrint`. `main` is the composition: one `clip` per world in film order,
+stacked by a `sequence` with hard cuts, 0.125 s per world (fireworks 0.25 s, jelly 0.5 s).
 
-The film's montage section cuts every 3 frames; the jellyfish shot holds 12 frames inside an
-iris. Both timings are data on the `shot` nodes.
+| Worlds | Notable functions |
+|---|---|
+| `fly` `jelly` `owl` `bell` `lighthouse` `wolf` | `flyInsect`, `jellyfish`, `owl`, `bell` with `bellRings` and `bellWaves`, `lighthouse` with `lighthouseStreaks`, `wolf` on `wolfPines` |
+| `telephone` `turntable` `frog` `bats` `wave` | `phoneHandset`, `phoneDial`, `vinyl`, `tonearm`, `frogMoon`, `frogling`, `frogCattail`, `batFlock` of `batSilhouette` with `batSonar`, `waveCurl`, `waveSpray`, `waveFoam` |
+| `cat` `bee` `radio` `fireworks` `hummingbird` `kettle` | `rain`, `leaf`, `sunflowerHead`, `burst`, `wavering`, `trumpet` |
+| `ferris` `waterfall` `bicycle` `whale` `piano` | `ferris`, `ferrisTent`, `waterfallFern`, `bicycleWheel`, `whale` |
+| `rocket` `city` `saturn` `balloons` `volcano` | `rocketShip`, `rocketPuff`, `cityBuilding`, `balloonsBalloon` |
+| `telescope` `campfire` `sunflowers` `snow` `mountains` `savanna` `pond` | `telescopeDishlet`, `campfireFlame`, `sunflower`, `flake`, `webflake`, `ridge`, `treeline`, `pondBubbles` |
 
-What the new scenes taught the language: `polygon` for hand-placed silhouettes, `scatter` inside
-a shape for reflections and stars, stamp transforms on `copy` for snowflake arms and sun rings,
+General functions used across worlds: `sky`, `water`, `stars`, `bubble`, `hand`. The worlds
+were built by six builders in parallel from one brief, each owning one part module; the fact
+that 29 worlds came out of the same 40 blocks without a core change is the test the language
+had to pass.
+
+What the worlds taught the language: `polygon` for hand-placed silhouettes, `scatter` inside a
+shape for reflections and stars, stamp transforms on `copy` for snowflake arms and sun rings,
 `lin` for sky gradients, `clip` and `sequence` for composition, `resample` and point normals for
-the pencil. The functions `sky`, `ridge`, `treeline`, `burst`, `flake` and `hand` are general:
-any sunset, any forest, any firework, any line that should look drawn.
+the pencil.
 
 **Humanizing in two places.** The print pass humanizes pixels: screens, slip, grain. `hand`
 humanizes geometry: even resampling, slow wobble and fine jitter along the normal, width that
-varies like pressure, thinner ends, a little overshoot. The firework rays go through it.
+varies like pressure, thinner ends, a little overshoot. Outlines, rays, ridges and rings go
+through it, and copies vary their size with `rand` so nothing repeats exactly.
 
 ## Read from the film
 
@@ -254,16 +262,28 @@ varies like pressure, thinner ends, a little overshoot. The firework rays go thr
 
 ## Next
 
-Modeling nodes the other worlds need: `text` (hand-drawn polylines), `streaks` (rain, waterfall,
-flames as tapered lines with flow), `silhouette` helpers (edge noise on a polygon), `stripes`, and
-most of all `world`, which embeds another scene at a position and scale with an ink mapping so the
-index and gather shots can be built. Ink mapping needs one engine feature: route one stencil's
-calls to another while a map is active.
+Blocks the builders asked for, each seen in more than one world, so each is a candidate for the
+core under the rule above. None is added yet; every world was built without them:
 
-Film-level data on top: `shots: [{ world, at, in, out }]` with the iris timing per shot.
+- `grid`: points on a lattice (city windows, piano keys, kettle tiles), now `scatter` plus `wrangle`.
+- `stripes` / `hatch`: parallel lines inside a shape (balloon gores, bell waves, rain).
+- `offset`: inset or outset outline of a polygon (rings, rims, double edges), now scaled copies.
+- `spiral`: a generator (turntable groove, saturn rings, sonar).
+- `distance` field: distance to a geometry, for glows and fog that follow a silhouette.
+- named fields and per-copy ink: reuse one field in several tints; give copies their own ink through an attribute.
+- `intersect`: shape ∩ shape, so bands inside a shape do not depend on `crop`.
+- `smooth`: a spline through polygon corners, so silhouettes read as curves and not segments.
+- `sweep`: a small shape repeated along a path with its normal (a coiled cord, a helix).
+- edge noise on a silhouette (crags, torn paper); `hand` only wobbles along the normal.
+- a soft `cut`: a knockout driven by a field, for glows on dark grounds and soft steam edges.
+- field arithmetic: `field` taking fields as inputs, or `max`/`add` of fields, since a `let` cannot read `@x`.
+- expressions: `atan2` and polar attributes for angular masks, `ceil`; a copy-index pair that `attr` does not overwrite.
+- `stroke` ignoring per-point widths, or a width parameter on `hand`; a mirror in subnet `xf`.
+- `text`: hand-drawn glyph polylines.
+- `world`: embed a scene at a position and scale with an ink mapping, for the film's index and gather shots.
 
 The compositing layer is the `risoPrint` subnet. Every scene, including `main`, ends in its own
-`rasterize → risoPrint`; the composition prints the shots' marks together, so a cut is one print
+`rasterize → risoPrint`; the composition prints the clips' marks together, so a cut is one print
 of the next world's marks.
 
 ## Editor

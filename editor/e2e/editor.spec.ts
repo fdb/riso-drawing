@@ -96,15 +96,15 @@ test("scenes open from the project list; the print node carries the print parame
 });
 
 test("the bypass flag passes a node's input through", async ({ page }) => {
-  await page.getByTestId("bypass-worldClip").click();
-  await expect(page.getByTestId("node-worldClip")).toHaveClass(/bypassed/);
+  await page.getByTestId("bypass-marks").click();
+  await expect(page.getByTestId("node-marks")).toHaveClass(/bypassed/);
   await page.keyboard.press("ControlOrMeta+z");
-  await expect(page.getByTestId("node-worldClip")).not.toHaveClass(/bypassed/);
+  await expect(page.getByTestId("node-marks")).not.toHaveClass(/bypassed/);
 });
 
 test("main plays shots of other scenes", async ({ page }) => {
   await page.getByTestId("scene-main").click();
-  await expect(page.getByTestId("node-c2")).toBeVisible();
+  await expect(page.getByTestId("node-jelly")).toBeVisible();
   await expect(page.getByTestId("hud")).toContainText("loop");
   await expect(page.getByTestId("hud")).toContainText("main");
 });

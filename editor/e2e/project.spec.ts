@@ -9,7 +9,7 @@ test("without a folder the project is kept in memory", async ({ page }) => {
   await expect(page.getByTestId("folders-unsupported")).toHaveCount(0);
   // a change stays in memory
   await page.getByTestId("scene-jelly").click();
-  await page.getByTestId("bypass-worldClip").click();
+  await page.getByTestId("bypass-marks").click();
   await expect(status).toHaveText("not on disk");
 });
 
@@ -96,7 +96,7 @@ test("a new project is written to the picked folder and autosaves", async ({
 
   // a change is written after the debounce
   await page.getByTestId("scene-jelly").click();
-  await page.getByTestId("bypass-worldClip").click();
+  await page.getByTestId("bypass-marks").click();
   await expect(status).toHaveText("unsaved");
   await expect(status).toHaveText("saved", { timeout: 5000 });
   const jelly = await page.evaluate(() =>
@@ -104,7 +104,7 @@ test("a new project is written to the picked folder and autosaves", async ({
       .get("scenes")
       .files.get("jelly.json"),
   );
-  expect(JSON.parse(jelly).graph.nodes.worldClip.bypass).toBe(true);
+  expect(JSON.parse(jelly).graph.nodes.marks.bypass).toBe(true);
 
   // removing a scene deletes its file
   page.on("dialog", (d) => d.accept());
